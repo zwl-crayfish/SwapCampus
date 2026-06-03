@@ -144,9 +144,9 @@ function scrollToBottom() {
 function connectWebSocket() {
   if (!currentUserId) return
   try {
-    const { Client } = require('@stomp/stompjs')
-    // Fallback to global SockJS
-    const socket = new (window.SockJS || require('sockjs-client'))('/ws/chat')
+    const { Client } = await import('@stomp/stompjs')
+    const SockJS = (await import('sockjs-client')).default
+    const socket = new SockJS('/ws/chat')
     stompClient = new Client({
       webSocketFactory: () => socket,
       debug: () => {},

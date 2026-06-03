@@ -9,6 +9,7 @@ import com.swapcampus.service.UserService;
 import com.swapcampus.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -120,7 +121,8 @@ public class AdminController {
     public ApiResponse<Void> handleReport(@PathVariable Long id,
                                            @RequestParam Integer status,
                                            @RequestParam(required = false) String remark,
-                                           @RequestParam Long handlerId) {
+                                           Authentication auth) {
+        Long handlerId = (Long) auth.getPrincipal();
         Report report = reportMapper.selectById(id);
         if (report == null) {
             return ApiResponse.error(404, "举报不存在");

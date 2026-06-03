@@ -1,0 +1,62 @@
+#!/bin/sh
+# Maven Wrapper startup script
+
+# Locate Java
+if [ -n "$JAVA_HOME" ]; then
+  JAVA="$JAVA_HOME/bin/java"
+else
+  JAVA="$(which java 2>/dev/null)"
+fi
+
+if [ ! -x "$JAVA" ]; then
+  echo "ERROR: Java not found. Please set JAVA_HOME or install JDK 17+." >&2
+  exit 1
+fi
+
+# Locate Maven Wrapper JAR
+MAVEN_PROJECTBASEDIR="$(cd "$(dirname "$0")" && pwd)"
+MVNW_DIR="$MAVEN_PROJECTBASEDIR/.mvn/wrapper"
+PROPS="$MVNW_DIR/maven-wrapper.properties"
+
+# Download Maven Wrapper JAR if missing
+WRAPPER_JAR="$MVNW_DIR/maven-wrapper.jar"
+if [ ! -f "$WRAPPER_JAR" ]; then
+  echo "Downloading Maven Wrapper..."
+  WRAPPER_URL=$(grep 'wrapperUrl' "$PROPS" | cut -d '=' -f2)
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$WRAPPER_URL" -o "$WRAPPER_JAR" || {
+      echo "ERROR: Failed to download Maven Wrapper from $WRAPPER_URL" >&2
+      exit 1
+    }
+  else
+    echo "ERROR: curl is required to download Maven Wrapper." >&2
+    exit 1
+  fi
+fi
+
+# Download Maven distribution if missing
+DIST_URL=$(grep 'distributionUrl' "$PROPS" | cut -d '=' -f2)
+MAVEN_HOME="$HOME/.m2/wrapper/dists/$(echo "$DIST_URL" | md5 2>/dev/null || echo "$DIST_URL" | md5sum 2>/dev/null | cut -d' ' -f1)"
+if [ ! -d "$MAVEN_HOME" ]; then
+  echo "Downloading Maven from $DIST_URL ..."
+  mkdir -p "$MAVEN_HOME"
+  TMP_ZIP="$MAVEN_HOME/maven.zip"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$DIST_URL" -o "$TMP_ZIP" || {
+      echo "ERROR: Failed to download Maven" >&2
+      exit 1
+    }
+  fi
+  unzip -qo "$TMP_ZIP" -d "$MAVEN_HOME" || true
+  rm -f "$TMP_ZIP"
+fi
+
+# Find the Maven executable (it's in a subdirectory of the extracted zip)
+MAVEN_BIN=$(find "$MAVEN_HOME" -name "mvn" -type f 2>/dev/null | head -1)
+if [ -z "$MAVEN_BIN" ]; then
+  echo "ERROR: Maven not found after extraction." >&2
+  exit 1
+fi
+
+# Run Maven
+exec "$JAVA" -classpath "$WRAPPER_JAR" org.apache.maven.wrapper.MavenWrapperMain "$@"

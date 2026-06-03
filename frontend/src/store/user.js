@@ -11,13 +11,13 @@ export const useUserStore = defineStore('user', () => {
 
   async function login(username, password) {
     const res = await authApi.login({ username, password })
-    token.value = res.data.accessToken
+    token.value = res.accessToken
     user.value = {
-      id: res.data.userId,
-      username: res.data.username,
-      realName: res.data.realName,
-      avatarUrl: res.data.avatarUrl,
-      role: res.data.role,
+      id: res.userId,
+      username: res.username,
+      realName: res.realName,
+      avatarUrl: res.avatarUrl,
+      role: res.role,
     }
     localStorage.setItem('token', token.value)
     localStorage.setItem('user', JSON.stringify(user.value))
@@ -25,13 +25,13 @@ export const useUserStore = defineStore('user', () => {
 
   async function register(data) {
     const res = await authApi.register(data)
-    token.value = res.data.accessToken
+    token.value = res.accessToken
     user.value = {
-      id: res.data.userId,
-      username: res.data.username,
-      realName: res.data.realName,
-      avatarUrl: res.data.avatarUrl,
-      role: res.data.role,
+      id: res.userId,
+      username: res.username,
+      realName: res.realName,
+      avatarUrl: res.avatarUrl,
+      role: res.role,
     }
     localStorage.setItem('token', token.value)
     localStorage.setItem('user', JSON.stringify(user.value))
@@ -48,8 +48,8 @@ export const useUserStore = defineStore('user', () => {
     if (!token.value) return
     try {
       const res = await userApi.getMe()
-      user.value = res.data
-      localStorage.setItem('user', JSON.stringify(res.data))
+      user.value = res
+      localStorage.setItem('user', JSON.stringify(res))
     } catch {
       logout()
     }
