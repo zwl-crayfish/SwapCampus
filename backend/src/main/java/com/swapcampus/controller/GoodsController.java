@@ -127,4 +127,20 @@ public class GoodsController {
         );
         return ApiResponse.success(result);
     }
+
+    /**
+     * 我的收藏商品
+     */
+    @GetMapping("/favorites")
+    public ApiResponse<Map<String, Object>> favorites(PageQuery query, Authentication auth) {
+        Long userId = (Long) auth.getPrincipal();
+        Page<Goods> page = goodsService.getFavoriteGoods(userId, query);
+        Map<String, Object> result = Map.of(
+                "records", page.getRecords(),
+                "total", page.getTotal(),
+                "page", page.getCurrent(),
+                "size", page.getSize()
+        );
+        return ApiResponse.success(result);
+    }
 }

@@ -5,11 +5,16 @@ import com.swapcampus.dto.LoginRequest;
 import com.swapcampus.dto.RegisterRequest;
 import com.swapcampus.dto.TokenResponse;
 import com.swapcampus.entity.User;
+import com.swapcampus.entity.Wallet;
 import com.swapcampus.repository.UserMapper;
+import com.swapcampus.repository.WalletMapper;
 import com.swapcampus.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
 
 /**
  * 认证服务
@@ -19,13 +24,20 @@ import org.springframework.stereotype.Service;
 public class AuthService {
 
     private final UserMapper userMapper;
+    private final WalletMapper walletMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
 
     /**
      * 用户注册
      */
+    @Transactional
     public TokenResponse register(RegisterRequest request) {
+        if ((request.getPhone() == null || request.getPhone().isBlank())
+                && (request.getEmail() == null || request.getEmail().isBlank())) {
+            throw new RuntimeException("手机号或邮箱至少填写一项，用于学号实名防冒用核验");
+        }
+
         // 检查学号是否已注册
         User existingStudent = userMapper.findByStudentId(request.getStudentId());
         if (existingStudent != null) {
@@ -51,6 +63,12 @@ public class AuthService {
                 .build();
 
         userMapper.insert(user);
+
+        Wallet wallet = new Wallet();
+        wallet.setUserId(user.getId());
+        wallet.setBalance(BigDecimal.ZERO);
+        wallet.setPoints(0);
+        walletMapper.insert(wallet);
 
         String token = jwtTokenProvider.generateToken(user.getId(), user.getUsername(), user.getRole());
         return buildTokenResponse(user, token);
