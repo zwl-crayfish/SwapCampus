@@ -141,7 +141,7 @@ function scrollToBottom() {
   })
 }
 
-function connectWebSocket() {
+async function connectWebSocket() {
   if (!currentUserId) return
   try {
     const { Client } = await import('@stomp/stompjs')

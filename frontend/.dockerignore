@@ -1,0 +1,32 @@
+# 依赖（容器内重新安装）
+node_modules/
+
+# 构建产物
+dist/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# 文档
+*.md
+
+# 环境变量
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# 临时文件
+/tmp/
+*.tmp

@@ -1,0 +1,34 @@
+# Maven 构建产物（容器内重新编译）
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# 文档
+*.md
+docs/
+
+# 日志
+*.log
+logs/
+
+# 环境变量
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 测试相关（CI 中已跑过）
+src/test/
+
+# 临时文件
+/tmp/
+*.tmp
