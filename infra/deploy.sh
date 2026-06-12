@@ -47,9 +47,12 @@ create_schema_configmap() {
     exit 1
   fi
 
+  local seed_file="$PROJECT_DIR/db/seed.sql"
+
   log "创建数据库 schema ConfigMap..."
   kubectl create configmap db-schema \
     --from-file=schema.sql="$schema_file" \
+    --from-file=seed.sql="$seed_file" \
     --namespace=swapcampus \
     --dry-run=client -o yaml | kubectl apply -f -
 }
