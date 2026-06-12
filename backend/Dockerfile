@@ -5,6 +5,9 @@
 # ---- Stage 1: 编译 ----
 FROM eclipse-temurin:17-jdk-alpine AS build
 
+# Alpine 需要手动安装 mvnw 依赖的 curl 和 unzip
+RUN apk add --no-cache curl unzip
+
 WORKDIR /app
 
 # 先复制依赖描述文件，利用 Docker 层缓存加速
