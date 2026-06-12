@@ -24,8 +24,12 @@ public interface GoodsMapper extends BaseMapper<Goods> {
             "<if test='categoryId != null'>AND category_id = #{categoryId}</if>" +
             "ORDER BY " +
             "<choose>" +
-            "<when test='sortBy == \"price\"'>price ${sortOrder}</when>" +
-            "<otherwise>created_at ${sortOrder}</otherwise>" +
+            "<when test='sortBy == \"price\"'>price </when>" +
+            "<otherwise>created_at </otherwise>" +
+            "</choose>" +
+            "<choose>" +
+            "<when test='sortOrder == \"asc\"'>ASC</when>" +
+            "<otherwise>DESC</otherwise>" +
             "</choose>" +
             "</script>")
     Page<Goods> searchGoods(Page<Goods> page,
@@ -36,4 +40,10 @@ public interface GoodsMapper extends BaseMapper<Goods> {
 
     @Select("SELECT * FROM goods WHERE seller_id = #{sellerId} AND status != -1 ORDER BY created_at DESC")
     Page<Goods> findBySellerId(Page<Goods> page, @Param("sellerId") Long sellerId);
+
+    @Select("SELECT g.* FROM goods g " +
+            "INNER JOIN favorite f ON f.goods_uuid = g.uuid " +
+            "WHERE f.user_id = #{userId} AND g.status != -1 " +
+            "ORDER BY f.created_at DESC")
+    Page<Goods> findFavoritesByUserId(Page<Goods> page, @Param("userId") Long userId);
 }
