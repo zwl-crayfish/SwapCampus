@@ -34,7 +34,9 @@ spec:
             - -c
             - |
               mysql -h mysql.swapcampus.svc.cluster.local -u${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE} < /schema/schema.sql
-              echo "Database initialized successfully."
+              echo "Schema created."
+              mysql -h mysql.swapcampus.svc.cluster.local -u${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE} < /schema/seed.sql
+              echo "Seed data injected."
           env:
             - name: MYSQL_USER
               valueFrom:

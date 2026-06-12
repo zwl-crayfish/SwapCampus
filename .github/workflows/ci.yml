@@ -59,6 +59,7 @@ jobs:
       - name: Initialize Database
         run: |
           mysql -h 127.0.0.1 -uroot -proot < db/schema.sql
+          mysql -h 127.0.0.1 -uroot -proot swapcampus < db/seed.sql
 
       - name: Build with Maven
         working-directory: backend
