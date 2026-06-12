@@ -3,6 +3,11 @@ version: '3.8'
 # ============================================
 # SwapCampus 校园闲置物品交易平台
 # 一键部署配置文件
+#
+# 使用方式:
+#   1. cp .env.example .env          # 复制并修改环境变量
+#   2. docker-compose up -d           # 启动所有服务
+#   3. docker-compose down -v         # 停止并清理数据卷
 # ============================================
 
 services:
@@ -11,11 +16,11 @@ services:
     image: mysql:8.0
     container_name: swapcampus-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: swapcampus
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-swapcampus}
       TZ: Asia/Shanghai
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
@@ -25,17 +30,19 @@ services:
       retries: 10
     networks:
       - swapcampus-net
+    restart: unless-stopped
 
   # Redis 缓存
   redis:
     image: redis:7-alpine
     container_name: swapcampus-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     networks:
       - swapcampus-net
+    restart: unless-stopped
 
   # MinIO 对象存储
   minio:
@@ -43,21 +50,23 @@ services:
     container_name: swapcampus-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
     networks:
       - swapcampus-net
+    restart: unless-stopped
 
   # Spring Boot 后端
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY:-swapcampus}/backend:${IMAGE_TAG:-latest}
     container_name: swapcampus-backend
     depends_on:
       mysql:
@@ -67,29 +76,36 @@ services:
       minio:
         condition: service_started
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/swapcampus?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: root
-      SPRING_DATA_REDIS_HOST: redis
-      MINIO_ENDPOINT: http://minio:9000
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST:-redis}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT_DOCKER:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-swapcampus}
+      JWT_SECRET: ${JWT_SECRET}
       TZ: Asia/Shanghai
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     networks:
       - swapcampus-net
+    restart: unless-stopped
 
   # Vue 3 前端
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY:-swapcampus}/frontend:${IMAGE_TAG:-latest}
     container_name: swapcampus-frontend
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3000}:80"
     networks:
       - swapcampus-net
+    restart: unless-stopped
 
 volumes:
   mysql_data:

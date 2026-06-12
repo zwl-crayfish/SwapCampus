@@ -1,0 +1,41 @@
+# Ingress — 对外暴露服务
+# 前置条件: 集群需安装 Ingress Controller（如 nginx-ingress）
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: swapcampus-ingress
+  namespace: swapcampus
+  annotations:
+    # nginx ingress 配置
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/websocket-services: "backend"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: swapcampus.example.com  # 替换为实际域名
+      http:
+        paths:
+          # 前端静态资源
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+          # 后端 API
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+          # WebSocket
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080

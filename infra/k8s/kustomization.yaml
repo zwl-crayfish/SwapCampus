@@ -1,0 +1,34 @@
+# Kustomize — 一站式部署配置
+# 使用方式:
+#   1. cp secret.yaml.example secret.yaml  # 编辑真实密码
+#   2. kubectl apply -k infra/k8s/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: swapcampus
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - mysql.yaml
+  - redis.yaml
+  - minio.yaml
+  - backend.yaml
+  - frontend.yaml
+  - ingress.yaml
+
+# Secret 需从模板复制后手动应用
+# cp infra/k8s/secret.yaml.example infra/k8s/secret.yaml
+# kubectl apply -f infra/k8s/secret.yaml
+
+# 为所有资源添加通用标签
+commonLabels:
+  app.kubernetes.io/name: swapcampus
+  app.kubernetes.io/part-of: swapcampus
+
+# 镜像版本覆盖（部署时修改此处或通过 --set 覆盖）
+images:
+  - name: ghcr.io/zwl-crayfish/swapcampus-backend
+    newTag: latest
+  - name: ghcr.io/zwl-crayfish/swapcampus-frontend
+    newTag: latest
