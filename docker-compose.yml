@@ -1,0 +1,101 @@
+version: '3.8'
+
+# ============================================
+# SwapCampus 校园闲置物品交易平台
+# 一键部署配置文件
+# ============================================
+
+services:
+  # MySQL 8 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: swapcampus-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: swapcampus
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - swapcampus-net
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: swapcampus-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - swapcampus-net
+
+  # MinIO 对象存储
+  minio:
+    image: minio/minio:latest
+    container_name: swapcampus-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - swapcampus-net
+
+  # Spring Boot 后端
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: swapcampus-backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/swapcampus?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+      SPRING_DATA_REDIS_HOST: redis
+      MINIO_ENDPOINT: http://minio:9000
+      TZ: Asia/Shanghai
+    ports:
+      - "8080:8080"
+    networks:
+      - swapcampus-net
+
+  # Vue 3 前端
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: swapcampus-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    networks:
+      - swapcampus-net
+
+volumes:
+  mysql_data:
+  redis_data:
+  minio_data:
+
+networks:
+  swapcampus-net:
+    driver: bridge

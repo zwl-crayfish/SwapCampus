@@ -1,0 +1,100 @@
+name: SwapCampus CI/CD
+
+# 触发条件: 推送 main 或 创建 PR
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ============================================
+  # 后端: Spring Boot 编译 + 测试
+  # ============================================
+  backend:
+    name: Backend Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: swapcampus
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Initialize Database
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot < db/schema.sql
+
+      - name: Build with Maven
+        working-directory: backend
+        run: ./mvnw compile -q
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/swapcampus?useSSL=false&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_USERNAME: root
+          SPRING_DATASOURCE_PASSWORD: root
+
+      - name: Run Tests
+        working-directory: backend
+        run: ./mvnw test
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/swapcampus?useSSL=false&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_USERNAME: root
+          SPRING_DATASOURCE_PASSWORD: root
+          JWT_SECRET: test-secret-for-ci-only
+
+  # ============================================
+  # 前端: Vue 3 编译检查
+  # ============================================
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  # ============================================
+  # 代码质量: 可选, 先跳过
+  # ============================================
+  # lint:
+  #   name: Code Lint
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Checkstyle (Java)
+  #       working-directory: backend
+  #       run: ./mvnw checkstyle:check
