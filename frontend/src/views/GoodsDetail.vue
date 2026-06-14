@@ -96,6 +96,14 @@
       <div class="desc-content">{{ goods.description || '卖家很懒，没有留下描述~' }}</div>
     </div>
 
+    <!-- 商品不存在 -->
+    <div v-if="!loading && !goods" class="not-found-state">
+      <el-icon :size="72"><WarningFilled /></el-icon>
+      <h2>商品不存在</h2>
+      <p>该商品可能已被下架或删除</p>
+      <el-button type="primary" size="large" @click="$router.push('/')">返回首页</el-button>
+    </div>
+
     <!-- 下单对话框 -->
     <el-dialog v-model="showOrderDialog" title="确认下单" width="480px" class="order-dialog" :rounded="true">
       <el-form label-width="100px" class="order-form">
@@ -169,9 +177,12 @@ async function load() {
     isFavorited.value = res.isFavorited || false
 
     // 获取卖家信息
-    if (goods.value.sellerId) {
+    if (goods.value && goods.value.sellerId) {
       fetchSellerInfo(goods.value.sellerId)
     }
+  } catch (e) {
+    goods.value = null
+    ElMessage.error('商品加载失败，可能已被删除或下架')
   } finally {
     loading.value = false
   }
@@ -492,5 +503,29 @@ onMounted(load)
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+/* ===== 商品不存在状态 ===== */
+.not-found-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+  color: var(--sc-text-secondary);
+  gap: 16px;
+}
+
+.not-found-state h2 {
+  font-size: 22px;
+  color: var(--sc-text);
+  margin: 0;
+}
+
+.not-found-state p {
+  font-size: 15px;
+  color: var(--sc-text-muted);
+  margin: 0;
 }
 </style>
