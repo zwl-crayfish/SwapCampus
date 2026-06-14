@@ -42,7 +42,14 @@ public class SecurityConfig {
                     "/error",
                     "/actuator/health",
                     "/uploads/**",
-                    "/h2-console/**"
+                    "/h2-console/**",
+                    // 前端静态资源 + SPA 路由
+                    "/",
+                    "/index.html",
+                    "/favicon.ico",
+                    "/assets/**",
+                    "/login",
+                    "/register"
                 ).permitAll()
                 // 管理员接口
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
