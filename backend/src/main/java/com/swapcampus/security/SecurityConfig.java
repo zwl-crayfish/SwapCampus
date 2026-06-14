@@ -30,7 +30,7 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // 公开接口
+                // 公开 API（无需登录）
                 .requestMatchers(
                     "/api/auth/**",
                     "/api/goods/list/**",
@@ -42,19 +42,14 @@ public class SecurityConfig {
                     "/error",
                     "/actuator/health",
                     "/uploads/**",
-                    "/h2-console/**",
-                    // 前端静态资源 + SPA 路由
-                    "/",
-                    "/index.html",
-                    "/favicon.ico",
-                    "/assets/**",
-                    "/login",
-                    "/register"
+                    "/h2-console/**"
                 ).permitAll()
                 // 管理员接口
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                // 其他接口需要认证
-                .anyRequest().authenticated()
+                // 其他 API + WebSocket 需要认证
+                .requestMatchers("/api/**", "/ws/**").authenticated()
+                // 所有其他请求（SPA 路由 + 静态资源）公开
+                .anyRequest().permitAll()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
