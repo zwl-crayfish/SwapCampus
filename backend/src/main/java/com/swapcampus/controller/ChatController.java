@@ -83,4 +83,27 @@ public class ChatController {
                 "total", contacts.getTotal()
         ));
     }
+
+    /**
+     * REST: 发送消息（HTTP 降级方案，WebSocket 不可用时使用）
+     */
+    @PostMapping("/send")
+    public ApiResponse<Message> sendMessageRest(@RequestBody Map<String, Object> payload,
+                                                Authentication auth) {
+        Long senderId = (Long) auth.getPrincipal();
+        Long receiverId = Long.valueOf(payload.get("receiverId").toString());
+        String content = payload.get("content").toString();
+        String msgType = payload.getOrDefault("msgType", "TEXT").toString();
+
+        Message message = messageService.sendMessage(senderId, receiverId, content, msgType, null);
+
+        // 推送给接收者
+        messagingTemplate.convertAndSendToUser(
+                String.valueOf(receiverId),
+                "/queue/chat",
+                message
+        );
+
+        return ApiResponse.success("发送成功", message);
+    }
 }

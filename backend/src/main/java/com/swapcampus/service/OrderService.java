@@ -14,11 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeParseException;
-import java.util.Locale;
-import java.util.Set;
+import java.math.BigDecimal;
 
 /**
  * 订单服务
@@ -26,7 +22,6 @@ import java.util.Set;
 @Service
 @RequiredArgsConstructor
 public class OrderService {
-    private static final Set<String> OFFLINE_TRADE_METHODS = Set.of("FACE", "PICKUP", "LOCKER");
 
     private final OrderMapper orderMapper;
     private final GoodsMapper goodsMapper;
@@ -48,10 +43,6 @@ public class OrderService {
         if (goods.getSellerId().equals(buyerId)) {
             throw new RuntimeException("不能购买自己的商品");
         }
-        String normalizedTradeMethod = normalizeTradeMethod(tradeMethod);
-        if (meetLocation == null || meetLocation.isBlank()) {
-            throw new RuntimeException("请填写线下交易地点或校内自提点");
-        }
 
         String uuid = IdUtil.fastSimpleUUID();
 
@@ -61,9 +52,8 @@ public class OrderService {
                 .buyerId(buyerId)
                 .sellerId(goods.getSellerId())
                 .amount(goods.getPrice())
-                .tradeMethod(normalizedTradeMethod)
+                .tradeMethod(tradeMethod)
                 .meetLocation(meetLocation)
-                .meetTime(parseMeetTime(meetTime))
                 .buyerConfirm(0)
                 .sellerConfirm(0)
                 .status(0)  // 待确认
@@ -87,11 +77,13 @@ public class OrderService {
         if (order == null || !order.getBuyerId().equals(userId)) {
             throw new RuntimeException("订单不存在或无权限");
         }
-        ensureConfirmable(order);
 
         order.setBuyerConfirm(1);
         if (order.getSellerConfirm() == 1) {
-            completeOrder(order);
+            order.setStatus(2);  // 双方确认，交易完成
+            // 增加信用分
+            addCreditScore(userId, 2);
+            addCreditScore(order.getSellerId(), 2);
         }
         orderMapper.updateById(order);
         return order;
@@ -106,11 +98,12 @@ public class OrderService {
         if (order == null || !order.getSellerId().equals(userId)) {
             throw new RuntimeException("订单不存在或无权限");
         }
-        ensureConfirmable(order);
 
         order.setSellerConfirm(1);
         if (order.getBuyerConfirm() == 1) {
-            completeOrder(order);
+            order.setStatus(2);  // 交易完成
+            addCreditScore(userId, 2);
+            addCreditScore(order.getBuyerId(), 2);
         }
         orderMapper.updateById(order);
         return order;
@@ -127,12 +120,6 @@ public class OrderService {
         }
         if (!order.getBuyerId().equals(userId) && !order.getSellerId().equals(userId)) {
             throw new RuntimeException("无权限操作");
-        }
-        if (order.getStatus() == 2) {
-            throw new RuntimeException("已完成订单不能取消");
-        }
-        if (order.getStatus() == -1) {
-            return;
         }
 
         order.setStatus(-1);
@@ -198,48 +185,6 @@ public class OrderService {
         if (user != null) {
             user.setCreditScore(Math.min(100, user.getCreditScore() + points));
             userMapper.updateById(user);
-        }
-    }
-
-    private void ensureConfirmable(Order order) {
-        if (order.getStatus() == -1) {
-            throw new RuntimeException("订单已取消");
-        }
-        if (order.getStatus() == 2) {
-            throw new RuntimeException("订单已完成");
-        }
-    }
-
-    private void completeOrder(Order order) {
-        order.setStatus(2);
-        order.setCompletedAt(LocalDateTime.now());
-        addCreditScore(order.getBuyerId(), 2);
-        addCreditScore(order.getSellerId(), 2);
-    }
-
-    private String normalizeTradeMethod(String tradeMethod) {
-        String method = tradeMethod == null ? "FACE" : tradeMethod.toUpperCase(Locale.ROOT);
-        if ("BOTH".equals(method)) {
-            method = "FACE";
-        }
-        if (!OFFLINE_TRADE_METHODS.contains(method)) {
-            throw new RuntimeException("本项目仅支持线下面交或校内自提点交易");
-        }
-        return method;
-    }
-
-    private LocalDateTime parseMeetTime(String meetTime) {
-        if (meetTime == null || meetTime.isBlank()) {
-            return null;
-        }
-        try {
-            return OffsetDateTime.parse(meetTime).toLocalDateTime();
-        } catch (DateTimeParseException ignored) {
-            try {
-                return LocalDateTime.parse(meetTime);
-            } catch (DateTimeParseException e) {
-                throw new RuntimeException("交易时间格式不正确");
-            }
         }
     }
 }

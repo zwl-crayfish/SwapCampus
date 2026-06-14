@@ -59,7 +59,4 @@ if [ -z "$MAVEN_BIN" ]; then
 fi
 
 # Run Maven
-exec "$JAVA" \
-  -classpath "$WRAPPER_JAR" \
-  -Dmaven.multiModuleProjectDirectory="$MAVEN_PROJECTBASEDIR" \
-  org.apache.maven.wrapper.MavenWrapperMain "$@"
+exec "$JAVA" -classpath "$WRAPPER_JAR" org.apache.maven.wrapper.MavenWrapperMain "$@"

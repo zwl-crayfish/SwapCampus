@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,8 +34,38 @@ public class GoodsController {
     @GetMapping("/list")
     public ApiResponse<Map<String, Object>> list(PageQuery query) {
         Page<Goods> page = goodsService.searchGoods(query);
+        List<Goods> records = page.getRecords();
+        
+        // 为每个商品补充封面图URL
+        List<Map<String, Object>> enrichedRecords = new ArrayList<>();
+        for (Goods g : records) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("uuid", g.getUuid());
+            item.put("sellerId", g.getSellerId());
+            item.put("categoryId", g.getCategoryId());
+            item.put("title", g.getTitle());
+            item.put("description", g.getDescription());
+            item.put("price", g.getPrice());
+            item.put("originalPrice", g.getOriginalPrice());
+            item.put("conditionLevel", g.getConditionLevel());
+            item.put("isBargain", g.getIsBargain());
+            item.put("tradeMethod", g.getTradeMethod());
+            item.put("campusLocation", g.getCampusLocation());
+            item.put("viewCount", g.getViewCount());
+            item.put("favoriteCount", g.getFavoriteCount());
+            item.put("status", g.getStatus());
+            item.put("createdAt", g.getCreatedAt());
+            
+            // 获取第一张图片作为封面
+            List<GoodsImage> imgs = goodsService.getImages(g.getUuid());
+            if (!imgs.isEmpty()) {
+                item.put("coverUrl", imgs.get(0).getUrl());
+            }
+            enrichedRecords.add(item);
+        }
+
         Map<String, Object> result = new HashMap<>();
-        result.put("records", page.getRecords());
+        result.put("records", enrichedRecords);
         result.put("total", page.getTotal());
         result.put("page", page.getCurrent());
         result.put("size", page.getSize());
@@ -119,22 +150,6 @@ public class GoodsController {
     public ApiResponse<Map<String, Object>> myPublished(PageQuery query, Authentication auth) {
         Long userId = (Long) auth.getPrincipal();
         Page<Goods> page = goodsService.getSellerGoods(userId, query);
-        Map<String, Object> result = Map.of(
-                "records", page.getRecords(),
-                "total", page.getTotal(),
-                "page", page.getCurrent(),
-                "size", page.getSize()
-        );
-        return ApiResponse.success(result);
-    }
-
-    /**
-     * 我的收藏商品
-     */
-    @GetMapping("/favorites")
-    public ApiResponse<Map<String, Object>> favorites(PageQuery query, Authentication auth) {
-        Long userId = (Long) auth.getPrincipal();
-        Page<Goods> page = goodsService.getFavoriteGoods(userId, query);
         Map<String, Object> result = Map.of(
                 "records", page.getRecords(),
                 "total", page.getTotal(),

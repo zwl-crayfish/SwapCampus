@@ -39,7 +39,9 @@ public class SecurityConfig {
                     "/ws/**",
                     "/swagger-ui/**",
                     "/v3/api-docs/**",
-                    "/error"
+                    "/error",
+                    "/uploads/**",
+                    "/h2-console/**"
                 ).permitAll()
                 // 管理员接口
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")

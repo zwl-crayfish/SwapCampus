@@ -5,18 +5,29 @@ spring:
   application:
     name: swapcampus
 
+  # 使用 H2 内存数据库
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/swapcampus?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
-    username: ${SPRING_DATASOURCE_USERNAME:root}
-    password: ${SPRING_DATASOURCE_PASSWORD:root}
-    hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:swapcampus;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DATABASE_TO_UPPER=FALSE
+    username: sa
+    password: 
 
+  # H2 Console (开发环境)
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  # SQL 初始化
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+  # 禁用 Redis (使用内存缓存)
   data:
     redis:
-      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      host: localhost
       port: 6379
       timeout: 3000ms
 
@@ -42,15 +53,17 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+      ddl-auto: update
 
-# MinIO 对象存储 (本地开发默认值)
+# MinIO 对象存储 (禁用，使用本地存储)
 minio:
+  enabled: false
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
   bucket-name: ${MINIO_BUCKET_NAME:swapcampus}
 
-# JWT 配置 (生产环境请通过环境变量覆盖)
+# JWT 配置
 jwt:
   secret: ${JWT_SECRET:SwapCampus2026DevSecretKeyForLocalDevelopmentOnly}
   expiration: 86400000  # 24小时
@@ -60,6 +73,8 @@ app:
   upload:
     max-image-count: 9
     image-max-size: 5242880  # 5MB
+    # 使用本地存储路径
+    local-storage-path: ./uploads
 
 # 日志
 logging:

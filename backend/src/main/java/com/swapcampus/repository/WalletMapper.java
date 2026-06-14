@@ -5,7 +5,7 @@ import com.swapcampus.entity.Wallet;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * 用户钱包/积分 Mapper
+ * 钱包 Mapper
  */
 @Mapper
 public interface WalletMapper extends BaseMapper<Wallet> {

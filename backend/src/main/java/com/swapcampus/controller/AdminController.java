@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.swapcampus.dto.ApiResponse;
 import com.swapcampus.dto.PageQuery;
 import com.swapcampus.entity.*;
-import com.swapcampus.service.ReportService;
+import com.swapcampus.service.GoodsService;
 import com.swapcampus.service.UserService;
 import com.swapcampus.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +25,7 @@ import java.util.Map;
 public class AdminController {
 
     private final UserService userService;
-    private final ReportService reportService;
+    private final GoodsService goodsService;
     private final ReportMapper reportMapper;
     private final GoodsMapper goodsMapper;
     private final OrderMapper orderMapper;
@@ -101,7 +101,11 @@ public class AdminController {
      */
     @GetMapping("/reports")
     public ApiResponse<Map<String, Object>> getReports(PageQuery query) {
-        Page<Report> result = reportService.getReports(query);
+        Page<Report> page = new Page<>(query.getPage(), query.getSize());
+        Page<Report> result = reportMapper.selectPage(page,
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Report>()
+                        .orderByDesc(Report::getCreatedAt)
+        );
         return ApiResponse.success(Map.of(
                 "records", result.getRecords(),
                 "total", result.getTotal(),
@@ -119,7 +123,15 @@ public class AdminController {
                                            @RequestParam(required = false) String remark,
                                            Authentication auth) {
         Long handlerId = (Long) auth.getPrincipal();
-        reportService.handleReport(id, status, remark, handlerId);
+        Report report = reportMapper.selectById(id);
+        if (report == null) {
+            return ApiResponse.error(404, "举报不存在");
+        }
+        report.setStatus(status);
+        report.setHandlerId(handlerId);
+        report.setHandleRemark(remark);
+        report.setHandledAt(java.time.LocalDateTime.now());
+        reportMapper.updateById(report);
         return ApiResponse.success("处理完成", null);
     }
 }

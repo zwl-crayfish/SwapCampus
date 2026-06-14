@@ -3,12 +3,8 @@ target/
 *.class
 *.jar
 *.war
-
-# Maven wrapper — 仅追踪 maven-wrapper.jar
-.mvn/*
-!.mvn/wrapper/
-.mvn/wrapper/*
 !.mvn/wrapper/maven-wrapper.jar
+.mvn/
 
 # Node
 node_modules/
@@ -34,9 +30,6 @@ Thumbs.db
 mysql_data/
 redis_data/
 minio_data/
-
-# K8s secrets (template is committed, real values are not)
-infra/k8s/secret.yaml
 
 # Temp
 /tmp/

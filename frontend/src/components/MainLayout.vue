@@ -18,6 +18,11 @@
             <template #prefix>
               <el-icon><Search /></el-icon>
             </template>
+            <template #append>
+              <el-button @click="handleSearch">
+                <el-icon><Search /></el-icon>
+              </el-button>
+            </template>
           </el-input>
         </div>
         <div class="header-actions">
@@ -92,51 +97,162 @@ function handleLogout() {
 </script>
 
 <style scoped>
+/* ========== Layout ========== */
 .layout {
   min-height: 100vh;
 }
+
+/* ========== Header / Navbar ========== */
 .header {
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  background: var(--sc-white);
+  box-shadow: 0 1px 0 0 var(--sc-border-light), var(--sc-shadow-sm);
   position: sticky;
   top: 0;
   z-index: 100;
   padding: 0;
   height: 64px;
 }
+
 .header-inner {
-  max-width: 1200px;
+  max-width: 1280px;
   margin: 0 auto;
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 0 20px;
+  gap: 28px;
+  padding: 0 24px;
 }
+
+/* ========== Logo ========== */
 .logo {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #409EFF;
+  color: var(--sc-primary);
   font-size: 20px;
-  font-weight: bold;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   white-space: nowrap;
+  transition: var(--sc-transition);
 }
+
+.logo:hover {
+  opacity: 0.82;
+}
+
+.logo :deep(.el-icon) {
+  color: var(--sc-primary);
+}
+
+/* ========== Search Box ========== */
 .header-search {
   flex: 1;
   max-width: 480px;
 }
+
+.header-search :deep(.el-input__wrapper) {
+  border-radius: var(--sc-radius-full) !important;
+  box-shadow: 0 0 0 1px var(--sc-border) inset !important;
+  padding-left: 16px;
+  transition: var(--sc-transition) !important;
+}
+
+.header-search :deep(.el-input__wrapper:focus-within) {
+  box-shadow: 0 0 0 2px var(--sc-primary-bg), 0 0 0 2px var(--sc-primary) inset !important;
+}
+
+.header-search :deep(.el-input__inner)::placeholder {
+  color: var(--sc-text-muted);
+  font-weight: 400;
+}
+
+.header-search :deep(.el-input-group__append) {
+  border-radius: 0 var(--sc-radius-full) var(--sc-radius-full) 0 !important;
+  background: var(--sc-primary);
+  border-color: var(--sc-primary) !important;
+  color: var(--sc-white);
+  box-shadow: none !important;
+  padding: 0 20px;
+  transition: var(--sc-transition) !important;
+}
+
+.header-search :deep(.el-input-group__append:hover) {
+  background: var(--sc-primary-dark);
+  border-color: var(--sc-primary-dark) !important;
+}
+
+/* ========== Header Actions ========== */
 .header-actions {
   display: flex;
   align-items: center;
   gap: 12px;
 }
+
+/* 发布闲置按钮 */
+.header-actions :deep(.el-button--primary) {
+  position: relative;
+  transition: var(--sc-transition) !important;
+}
+
+.header-actions :deep(.el-button--primary:hover) {
+  transform: translateY(-2px);
+  box-shadow: var(--sc-shadow-hover) !important;
+}
+
+/* 聊天按钮（圆形图标） */
+.header-actions :deep(.el-button.is-circle) {
+  border-color: var(--sc-border-light);
+  color: var(--sc-text-secondary);
+  transition: var(--sc-transition) !important;
+}
+
+.header-actions :deep(.el-button.is-circle:hover) {
+  color: var(--sc-primary);
+  border-color: var(--sc-primary);
+  background: var(--sc-primary-bg) !important;
+}
+
+/* ========== Avatar Dropdown ========== */
 .avatar {
   cursor: pointer;
-  border: 2px solid #e8e8e8;
+  border: 2px solid var(--sc-border-light);
+  transition: var(--sc-transition);
 }
+
+.avatar:hover {
+  border-color: var(--sc-primary);
+  box-shadow: 0 0 0 4px var(--sc-primary-bg);
+}
+
+/* ========== 未登录状态：登录/注册 ========== */
+.header-actions :deep(.el-button:not(.el-button--primary):not(.is-circle)) {
+  /* 登录按钮 — 文字链接风格 */
+  color: var(--sc-text-secondary);
+  border: none;
+  background: transparent;
+  font-weight: 500;
+  padding: 8px 12px;
+  transition: var(--sc-transition) !important;
+}
+
+.header-actions :deep(.el-button:not(.el-button--primary):not(.is-circle):hover) {
+  color: var(--sc-primary);
+  background: transparent;
+}
+
+/* 注册按钮 — 主色描边 */
+.header-actions :deep(.el-button--primary.el-button:not(:has(.el-icon))) {
+  --el-button-bg-color: transparent !important;
+  --el-button-border-color: var(--sc-primary) !important;
+  --el-button-text-color: var(--sc-primary) !important;
+  --el-button-hover-bg-color: var(--sc-primary) !important;
+  --el-button-hover-border-color: var(--sc-primary) !important;
+  --el-button-hover-text-color: var(--sc-white) !important;
+}
+
+/* ========== Main Content ========== */
 .main-content {
-  background: #f5f7fa;
+  background: var(--sc-bg);
   min-height: calc(100vh - 64px);
   padding: 0;
 }

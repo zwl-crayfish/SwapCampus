@@ -18,8 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.time.LocalDateTime;
 
 /**
  * 商品服务
@@ -27,9 +26,6 @@ import java.util.Set;
 @Service
 @RequiredArgsConstructor
 public class GoodsService {
-    private static final int MAX_IMAGE_COUNT = 9;
-    private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024L;
-    private static final Set<String> ALLOWED_TRADE_METHODS = Set.of("FACE", "PICKUP", "LOCKER", "BOTH");
 
     private final GoodsMapper goodsMapper;
     private final GoodsImageMapper goodsImageMapper;
@@ -40,7 +36,6 @@ public class GoodsService {
      * 分页搜索商品
      */
     public Page<Goods> searchGoods(PageQuery query) {
-        normalizePageQuery(query);
         Page<Goods> page = new Page<>(query.getPage(), query.getSize());
         return goodsMapper.searchGoods(page,
                 query.getKeyword(),
@@ -78,8 +73,6 @@ public class GoodsService {
      */
     @Transactional
     public Goods publishGoods(GoodsRequest request, Long sellerId, MultipartFile[] images) {
-        validateGoodsRequest(request);
-        validateImages(images);
         String uuid = IdUtil.fastSimpleUUID();
 
         Goods goods = Goods.builder()
@@ -97,6 +90,8 @@ public class GoodsService {
                 .viewCount(0)
                 .favoriteCount(0)
                 .status(1)  // 直接上架
+                .createdAt(LocalDateTime.now())  // 显式设置发布时间
+                .updatedAt(LocalDateTime.now())
                 .build();
 
         goodsMapper.insert(goods);
@@ -114,8 +109,6 @@ public class GoodsService {
      */
     @Transactional
     public Goods updateGoods(String uuid, GoodsRequest request, Long sellerId, MultipartFile[] images) {
-        validateGoodsRequest(request);
-        validateImages(images);
         Goods goods = goodsMapper.findByUuid(uuid);
         if (goods == null) {
             throw new RuntimeException("商品不存在");
@@ -159,9 +152,6 @@ public class GoodsService {
         if (!goods.getSellerId().equals(userId)) {
             throw new RuntimeException("无权限操作");
         }
-        if (status == null || (status != -1 && status != 0 && status != 1)) {
-            throw new RuntimeException("商品状态不合法");
-        }
         goods.setStatus(status);
         goodsMapper.updateById(goods);
     }
@@ -178,19 +168,12 @@ public class GoodsService {
      * 收藏/取消收藏
      */
     public boolean toggleFavorite(Long userId, String goodsUuid) {
-        Goods goods = goodsMapper.findByUuid(goodsUuid);
-        if (goods == null || goods.getStatus() == -1) {
-            throw new RuntimeException("商品不存在");
-        }
-        if (goods.getSellerId().equals(userId)) {
-            throw new RuntimeException("不能收藏自己的商品");
-        }
-
         LambdaQueryWrapper<Favorite> wrapper = new LambdaQueryWrapper<Favorite>()
                 .eq(Favorite::getUserId, userId)
                 .eq(Favorite::getGoodsUuid, goodsUuid);
         Favorite existing = favoriteMapper.selectOne(wrapper);
 
+        Goods goods = goodsMapper.findByUuid(goodsUuid);
         if (existing != null) {
             favoriteMapper.deleteById(existing.getId());
             if (goods != null) {
@@ -222,15 +205,6 @@ public class GoodsService {
         ) > 0;
     }
 
-    /**
-     * 获取当前用户收藏的商品列表
-     */
-    public Page<Goods> getFavoriteGoods(Long userId, PageQuery query) {
-        normalizePageQuery(query);
-        Page<Goods> page = new Page<>(query.getPage(), query.getSize());
-        return goodsMapper.findFavoritesByUserId(page, userId);
-    }
-
     private void uploadImages(String uuid, MultipartFile[] images) {
         for (int i = 0; i < images.length; i++) {
             String url = fileService.uploadImage(images[i], uuid);
@@ -239,54 +213,6 @@ public class GoodsService {
             img.setUrl(url);
             img.setSortOrder(i);
             goodsImageMapper.insert(img);
-        }
-    }
-
-    private void normalizePageQuery(PageQuery query) {
-        if (query.getPage() == null || query.getPage() < 1) {
-            query.setPage(1);
-        }
-        if (query.getSize() == null || query.getSize() < 1 || query.getSize() > 100) {
-            query.setSize(10);
-        }
-        String sortBy = query.getSortBy();
-        query.setSortBy("price".equals(sortBy) ? "price" : "created_at");
-        String sortOrder = query.getSortOrder();
-        query.setSortOrder("asc".equalsIgnoreCase(sortOrder) ? "asc" : "desc");
-    }
-
-    private void validateGoodsRequest(GoodsRequest request) {
-        if (request.getTradeMethod() == null) {
-            request.setTradeMethod("FACE");
-        }
-        String method = request.getTradeMethod().toUpperCase(Locale.ROOT);
-        if (!ALLOWED_TRADE_METHODS.contains(method)) {
-            throw new RuntimeException("交易方式仅支持线下面交或校内自提点");
-        }
-        request.setTradeMethod(method);
-        if (request.getCampusLocation() == null || request.getCampusLocation().isBlank()) {
-            throw new RuntimeException("请填写线下交易地点或校内自提点");
-        }
-    }
-
-    private void validateImages(MultipartFile[] images) {
-        if (images == null) {
-            return;
-        }
-        if (images.length > MAX_IMAGE_COUNT) {
-            throw new RuntimeException("商品图片最多上传9张");
-        }
-        for (MultipartFile image : images) {
-            if (image == null || image.isEmpty()) {
-                continue;
-            }
-            if (image.getSize() > MAX_IMAGE_SIZE) {
-                throw new RuntimeException("单张图片不能超过5MB");
-            }
-            String contentType = image.getContentType();
-            if (contentType == null || !contentType.toLowerCase(Locale.ROOT).startsWith("image/")) {
-                throw new RuntimeException("仅支持上传图片文件");
-            }
         }
     }
 }

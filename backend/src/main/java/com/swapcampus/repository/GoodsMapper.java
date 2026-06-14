@@ -19,17 +19,13 @@ public interface GoodsMapper extends BaseMapper<Goods> {
     @Select("<script>" +
             "SELECT * FROM goods WHERE status = 1 " +
             "<if test='keyword != null and keyword != \"\"'>" +
-            "AND MATCH(title, description) AGAINST(#{keyword} IN BOOLEAN MODE) " +
+            "AND (title LIKE CONCAT('%', #{keyword}, '%') OR description LIKE CONCAT('%', #{keyword}, '%')) " +
             "</if>" +
             "<if test='categoryId != null'>AND category_id = #{categoryId}</if>" +
             "ORDER BY " +
             "<choose>" +
-            "<when test='sortBy == \"price\"'>price </when>" +
-            "<otherwise>created_at </otherwise>" +
-            "</choose>" +
-            "<choose>" +
-            "<when test='sortOrder == \"asc\"'>ASC</when>" +
-            "<otherwise>DESC</otherwise>" +
+            "<when test='sortBy == \"price\"'>price ${sortOrder}</when>" +
+            "<otherwise>created_at ${sortOrder}</otherwise>" +
             "</choose>" +
             "</script>")
     Page<Goods> searchGoods(Page<Goods> page,
@@ -40,10 +36,4 @@ public interface GoodsMapper extends BaseMapper<Goods> {
 
     @Select("SELECT * FROM goods WHERE seller_id = #{sellerId} AND status != -1 ORDER BY created_at DESC")
     Page<Goods> findBySellerId(Page<Goods> page, @Param("sellerId") Long sellerId);
-
-    @Select("SELECT g.* FROM goods g " +
-            "INNER JOIN favorite f ON f.goods_uuid = g.uuid " +
-            "WHERE f.user_id = #{userId} AND g.status != -1 " +
-            "ORDER BY f.created_at DESC")
-    Page<Goods> findFavoritesByUserId(Page<Goods> page, @Param("userId") Long userId);
 }
