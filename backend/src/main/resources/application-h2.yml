@@ -9,7 +9,7 @@
 spring:
   datasource:
     driver-class-name: org.h2.Driver
-    url: jdbc:h2:mem:swapcampus;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DATABASE_TO_UPPER=FALSE;MODE=MySQL
+    url: jdbc:h2:mem:swapcampus;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DATABASE_TO_UPPER=FALSE;MODE=MySQL;NON_KEYWORDS=USER
     username: sa
     password:
 
