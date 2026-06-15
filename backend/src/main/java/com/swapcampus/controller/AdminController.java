@@ -8,6 +8,7 @@ import com.swapcampus.service.GoodsService;
 import com.swapcampus.service.MessageService;
 import com.swapcampus.service.UserService;
 import com.swapcampus.repository.*;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -34,6 +35,7 @@ public class AdminController {
     private final GoodsMapper goodsMapper;
     private final OrderMapper orderMapper;
     private final UserMapper userMapper;
+    private final GoodsImageMapper goodsImageMapper;
 
     /**
      * 仪表盘数据
@@ -102,7 +104,7 @@ public class AdminController {
                         .orderByDesc(Goods::getCreatedAt);
         Page<Goods> result = goodsMapper.selectPage(page, wrapper);
 
-        // 补充卖家用户名
+        // 补充卖家用户名和商品图片
         List<Map<String, Object>> records = new ArrayList<>();
         for (Goods g : result.getRecords()) {
             Map<String, Object> item = new HashMap<>();
@@ -110,6 +112,13 @@ public class AdminController {
             User seller = userMapper.selectById(g.getSellerId());
             item.put("sellerName", seller != null ? seller.getUsername() : "未知");
             item.put("sellerId", seller != null ? seller.getStudentId() : "-");
+            // 查询该商品的图片列表
+            List<GoodsImage> images = goodsImageMapper.selectList(
+                    new LambdaQueryWrapper<GoodsImage>()
+                            .eq(GoodsImage::getGoodsUuid, g.getUuid())
+                            .orderByAsc(GoodsImage::getSortOrder)
+            );
+            item.put("images", images);
             records.add(item);
         }
 
