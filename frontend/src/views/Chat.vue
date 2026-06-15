@@ -23,7 +23,7 @@
               <span>{{ (userNames[c] || '?').charAt(0).toUpperCase() }}</span>
             </div>
             <div class="contact-content">
-              <div class="contact-name">{{ userNames[c] || ('用户 #' + c) }}</div>
+              <div class="contact-name">{{ c === 0 ? '系统通知' : (userNames[c] || ('用户 #' + c)) }}</div>
               <div class="contact-preview">点击开始聊天</div>
             </div>
           </div>
@@ -44,7 +44,7 @@
               <div class="header-avatar">
                 <span>{{ (userNames[currentContact] || '?').charAt(0).toUpperCase() }}</span>
               </div>
-              <span class="header-username">{{ userNames[currentContact] || ('用户 #' + currentContact) }}</span>
+              <span class="header-username">{{ currentContact === 0 ? '系统通知' : (userNames[currentContact] || ('用户 #' + currentContact)) }}</span>
             </div>
           </div>
 
@@ -126,7 +126,6 @@
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Picture, Promotion } from '@element-plus/icons-vue'
 import { chatApi } from '@/api'
 import { ElMessage } from 'element-plus'
 
@@ -372,16 +371,25 @@ async function connectWebSocket() {
 
 onMounted(async () => {
   await loadContacts()
-  
-  // 从路由参数获取联系人ID
+
+  // 从路由参数获取联系人ID（如从商品详情页"联系卖家"进入）
   if (route.params.contactId) {
     const cid = Number(route.params.contactId)
     if (cid && !isNaN(cid)) {
       currentContact.value = cid
+
+      // 立即获取该联系人的用户名（避免显示"用户 #3"）
+      await fetchUserNames([cid])
+
+      // 如果不在联系人列表中，自动添加到侧边栏
+      if (!contacts.value.includes(cid)) {
+        contacts.value.unshift(cid)  // 置顶显示
+      }
+
       await loadMessages(cid)
     }
   }
-  
+
   // 建立 WebSocket 连接
   connectWebSocket()
 })

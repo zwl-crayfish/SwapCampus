@@ -5,6 +5,7 @@ import com.swapcampus.dto.ApiResponse;
 import com.swapcampus.dto.PageQuery;
 import com.swapcampus.entity.*;
 import com.swapcampus.service.GoodsService;
+import com.swapcampus.service.MessageService;
 import com.swapcampus.service.UserService;
 import com.swapcampus.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +13,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -26,6 +29,7 @@ public class AdminController {
 
     private final UserService userService;
     private final GoodsService goodsService;
+    private final MessageService messageService;
     private final ReportMapper reportMapper;
     private final GoodsMapper goodsMapper;
     private final OrderMapper orderMapper;
@@ -43,6 +47,10 @@ public class AdminController {
         data.put("pendingReports", reportMapper.selectCount(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Report>()
                         .eq(Report::getStatus, 0)
+        ));
+        data.put("pendingReviews", goodsMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Goods>()
+                        .eq(Goods::getStatus, 3)
         ));
         return ApiResponse.success(data);
     }
@@ -83,17 +91,72 @@ public class AdminController {
     }
 
     /**
-     * 商品审核
+     * 商品审核列表（含卖家信息）
+     */
+    @GetMapping("/goods/review")
+    public ApiResponse<Map<String, Object>> getReviewGoods(PageQuery query) {
+        Page<Goods> page = new Page<>(query.getPage(), query.getSize());
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Goods> wrapper =
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Goods>()
+                        .eq(Goods::getStatus, 3)
+                        .orderByDesc(Goods::getCreatedAt);
+        Page<Goods> result = goodsMapper.selectPage(page, wrapper);
+
+        // 补充卖家用户名
+        List<Map<String, Object>> records = new ArrayList<>();
+        for (Goods g : result.getRecords()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("goods", g);
+            User seller = userMapper.selectById(g.getSellerId());
+            item.put("sellerName", seller != null ? seller.getUsername() : "未知");
+            item.put("sellerId", seller != null ? seller.getStudentId() : "-");
+            records.add(item);
+        }
+
+        return ApiResponse.success(Map.of(
+                "records", records,
+                "total", result.getTotal(),
+                "page", result.getCurrent(),
+                "size", result.getSize()
+        ));
+    }
+
+    /**
+     * 审核商品（通过/驳回）
      */
     @PutMapping("/goods/{uuid}/audit")
-    public ApiResponse<Void> auditGoods(@PathVariable String uuid, @RequestParam Integer status) {
+    public ApiResponse<Void> auditGoods(@PathVariable String uuid,
+                                         @RequestParam Integer status,
+                                         @RequestParam(required = false) String remark,
+                                         Authentication auth) {
         Goods goods = goodsMapper.findByUuid(uuid);
         if (goods == null) {
             return ApiResponse.error(404, "商品不存在");
         }
-        goods.setStatus(status);
+        if (goods.getStatus() != 3) {
+            return ApiResponse.error(400, "该商品不在审核状态");
+        }
+        Long handlerId = (Long) auth.getPrincipal();
+        goods.setStatus(status); // 1=通过上架, 0=驳回下架
         goodsMapper.updateById(goods);
-        return ApiResponse.success("审核完成", null);
+
+        // 向发布者发送系统通知
+        String notificationContent;
+        if (status == 1) {
+            notificationContent = String.format(
+                    "【系统通知】您发布的商品《%s》已通过管理员审核，现已正式上架展示！祝您交易愉快！",
+                    goods.getTitle()
+            );
+        } else {
+            notificationContent = String.format(
+                    "【系统通知】很抱歉，您发布的商品《%s》未通过管理员审核，已被驳回。原因：%s\n您可以修改后重新提交。",
+                    goods.getTitle(),
+                    remark != null && !remark.isEmpty() ? remark : "不符合平台规范"
+            );
+        }
+        messageService.sendMessage(0L, goods.getSellerId(), notificationContent, "SYSTEM", uuid);
+
+        return ApiResponse.success(status == 1 ? "已通过审核" : "已驳回", null);
     }
 
     /**
@@ -132,6 +195,36 @@ public class AdminController {
         report.setHandleRemark(remark);
         report.setHandledAt(java.time.LocalDateTime.now());
         reportMapper.updateById(report);
+
+        // 获取商品信息用于通知内容
+        Goods goods = goodsMapper.findByUuid(report.getGoodsUuid());
+        String goodsTitle = goods != null ? goods.getTitle() : "该商品";
+
+        // 举报成立 → 自动下架商品（无论当前状态，只要未删除就强制下架）
+        if (status == 1 && goods != null && goods.getStatus() != -1) {
+            goods.setStatus(0); // 0 = 下架
+            goodsMapper.updateById(goods);
+        }
+
+        // 向被举报者（商品发布者）发送系统通知
+        if (report.getReportedUserId() != null) {
+            String notificationContent;
+            if (status == 1) {
+                notificationContent = String.format(
+                    "【系统通知】您发布的商品《%s》经核实存在违规情况，已被管理员下架。如有疑问请联系客服。%s",
+                    goodsTitle,
+                    remark != null && !remark.isEmpty() ? "\n处理备注：" + remark : ""
+                );
+            } else {
+                notificationContent = String.format(
+                    "【系统通知】关于您发布的商品《%s》的举报已处理完毕，举报未成立，您的商品可正常展示。%s",
+                    goodsTitle,
+                    remark != null && !remark.isEmpty() ? "\n备注：" + remark : ""
+                );
+            }
+            messageService.sendMessage(0L, report.getReportedUserId(), notificationContent, "SYSTEM", report.getGoodsUuid());
+        }
+
         return ApiResponse.success("处理完成", null);
     }
 }

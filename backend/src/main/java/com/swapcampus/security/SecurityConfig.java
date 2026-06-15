@@ -33,7 +33,8 @@ public class SecurityConfig {
                 // 公开接口
                 .requestMatchers(
                     "/api/auth/**",
-                    "/api/goods/list/**",
+                    "/api/goods/list",
+                    "/api/goods/recommendations",
                     "/api/goods/detail/**",
                     "/api/category/**",
                     "/ws/**",

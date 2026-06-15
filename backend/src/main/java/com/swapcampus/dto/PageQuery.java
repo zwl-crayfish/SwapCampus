@@ -19,5 +19,20 @@ public class PageQuery {
     private Long categoryId;
     private String sortBy = "created_at";
     private String sortOrder = "desc";
-    private Integer status;
+    @Builder.Default
+    private String status = null;
+    @Builder.Default
+    private Double minPrice = null;
+    @Builder.Default
+    private Double maxPrice = null;
+    @Builder.Default
+    private String timeRange = null;
+    @Builder.Default
+    private Integer viewMin = null;
+    @Builder.Default
+    private Integer favMin = null;
+    @Builder.Default
+    private Integer conditionMin = null;
+    @Builder.Default
+    private Integer conditionMax = null;
 }

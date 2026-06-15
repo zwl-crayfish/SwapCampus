@@ -90,6 +90,8 @@ CREATE TABLE IF NOT EXISTS orders (
     status INT DEFAULT 0,
     buyer_rating INT,
     buyer_review TEXT,
+    seller_rating INT,
+    seller_review TEXT,
     completed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

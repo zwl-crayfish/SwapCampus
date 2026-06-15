@@ -26,6 +26,7 @@ public class OrderService {
     private final OrderMapper orderMapper;
     private final GoodsMapper goodsMapper;
     private final UserMapper userMapper;
+    private final MessageService messageService;
 
     /**
      * 创建订单
@@ -61,6 +62,11 @@ public class OrderService {
 
         orderMapper.insert(order);
 
+        // 通知卖家：有新订单
+        messageService.sendMessage(0L, goods.getSellerId(),
+                String.format("【新订单通知】买家已下单购买您的商品《%s》，金额 ¥%s，请及时确认处理。", goods.getTitle(), goods.getPrice().toString()),
+                "SYSTEM", goodsUuid);
+
         // 更新商品状态为已售出
         goods.setStatus(2);
         goodsMapper.updateById(goods);
@@ -81,9 +87,13 @@ public class OrderService {
         order.setBuyerConfirm(1);
         if (order.getSellerConfirm() == 1) {
             order.setStatus(2);  // 双方确认，交易完成
-            // 增加信用分
             addCreditScore(userId, 2);
             addCreditScore(order.getSellerId(), 2);
+            messageService.sendMessage(0L, order.getSellerId(),
+                    "【交易完成】买家已确认收货，双方确认完毕，交易成功完成！感谢使用 SwapCampus。", "SYSTEM", order.getGoodsUuid());
+        } else {
+            messageService.sendMessage(0L, order.getSellerId(),
+                    "【订单更新】买家已确认收货，请您也确认发货状态以完成交易。", "SYSTEM", order.getGoodsUuid());
         }
         orderMapper.updateById(order);
         return order;
@@ -104,6 +114,11 @@ public class OrderService {
             order.setStatus(2);  // 交易完成
             addCreditScore(userId, 2);
             addCreditScore(order.getBuyerId(), 2);
+            messageService.sendMessage(0L, order.getBuyerId(),
+                    "【交易完成】卖家已确认发货，双方确认完毕，交易成功完成！感谢使用 SwapCampus。", "SYSTEM", order.getGoodsUuid());
+        } else {
+            messageService.sendMessage(0L, order.getBuyerId(),
+                    "【订单更新】卖家已确认发货/交付，请您确认收货以完成交易。", "SYSTEM", order.getGoodsUuid());
         }
         orderMapper.updateById(order);
         return order;
@@ -125,6 +140,12 @@ public class OrderService {
         order.setStatus(-1);
         orderMapper.updateById(order);
 
+        // 通知对方订单已取消
+        Long otherParty = order.getBuyerId().equals(userId) ? order.getSellerId() : order.getBuyerId();
+        String role = order.getBuyerId().equals(userId) ? "买家" : "卖家";
+        messageService.sendMessage(0L, otherParty,
+                "【订单取消】" + role + "已取消该订单，商品已恢复上架。如有疑问请联系对方。", "SYSTEM", order.getGoodsUuid());
+
         // 恢复商品为上架状态
         Goods goods = goodsMapper.findByUuid(order.getGoodsUuid());
         if (goods != null) {
@@ -134,7 +155,7 @@ public class OrderService {
     }
 
     /**
-     * 评价订单
+     * 买家评价
      */
     @Transactional
     public void reviewOrder(String orderUuid, Long buyerId, Integer rating, String review) {
@@ -149,6 +170,34 @@ public class OrderService {
         order.setBuyerRating(rating);
         order.setBuyerReview(review);
         orderMapper.updateById(order);
+
+        // 通知卖家：买家评价了
+        String stars = "★".repeat(Math.max(0, Math.min(rating, 5)));
+        messageService.sendMessage(0L, order.getSellerId(),
+                "【买家评价】买家对您的商品给出了 " + rating + " 星评价（" + stars + "）" + (review != null && !review.isEmpty() ? "，评价内容：" + review : "") + "，您也可以对买家进行评价。", "SYSTEM", order.getGoodsUuid());
+    }
+
+    /**
+     * 卖家评价买家
+     */
+    @Transactional
+    public void sellerReviewOrder(String orderUuid, Long sellerId, Integer rating, String review) {
+        Order order = orderMapper.findByUuid(orderUuid);
+        if (order == null || !order.getSellerId().equals(sellerId)) {
+            throw new RuntimeException("订单不存在或无权限");
+        }
+        if (order.getStatus() != 2) {
+            throw new RuntimeException("订单未完成，无法评价");
+        }
+
+        order.setSellerRating(rating);
+        order.setSellerReview(review);
+        orderMapper.updateById(order);
+
+        // 通知买家：卖家评价了
+        String stars = "★".repeat(Math.max(0, Math.min(rating, 5)));
+        messageService.sendMessage(0L, order.getBuyerId(),
+                "【卖家评价】卖家对您给出了 " + rating + " 星评价（" + stars + "）" + (review != null && !review.isEmpty() ? "，评价内容：" + review : "") + "。", "SYSTEM", order.getGoodsUuid());
     }
 
     /**

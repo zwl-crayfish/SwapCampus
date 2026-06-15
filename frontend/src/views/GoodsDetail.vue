@@ -7,13 +7,23 @@
           <el-image
             v-if="images.length > 0"
             :src="images[currentImageIndex]?.url"
-            fit="contain"
+            fit="cover"
             class="main-image"
           />
           <div v-else class="no-image-placeholder">
-            <el-icon :size="80"><PictureFilled /></el-icon>
-            <p>暂无图片</p>
+            <img src="/placeholder.png" alt="暂无图片" />
           </div>
+          <!-- 左右切换箭头 -->
+          <template v-if="images.length > 1">
+            <button class="img-arrow img-arrow--left" @click="prevImage" @mouseenter="showArrow = 'left'" @mouseleave="showArrow = null">
+              <el-icon><ArrowLeft /></el-icon>
+            </button>
+            <button class="img-arrow img-arrow--right" @click="nextImage" @mouseenter="showArrow = 'right'" @mouseleave="showArrow = null">
+              <el-icon><ArrowRight /></el-icon>
+            </button>
+          </template>
+          <!-- 图片计数 -->
+          <div class="image-counter" v-if="images.length > 1">{{ currentImageIndex + 1 }} / {{ images.length }}</div>
         </div>
         <div class="image-thumbs" v-if="images.length > 1">
           <div
@@ -59,19 +69,33 @@
 
         <div class="action-buttons">
           <el-button
+            type="danger"
+            class="action-btn action-btn--report"
+            plain
+            @click="showReportDialog = true"
+            v-if="userStore.isLoggedIn"
+          >
+            <el-icon><Warning /></el-icon>举报商品
+          </el-button>
+          <el-button
             :type="isFavorited ? 'warning' : ''"
-            size="large"
-            class="action-btn action-btn--outline"
+            class="action-btn action-btn--secondary"
             @click="handleFavorite"
             v-if="userStore.isLoggedIn"
           >
             <el-icon><Star /></el-icon>{{ isFavorited ? '已收藏' : '收藏' }}
           </el-button>
-          <el-button type="primary" size="large" class="action-btn action-btn--primary" @click="handleContact" v-if="userStore.isLoggedIn">
+          <el-button type="primary" class="action-btn action-btn--contact" @click="handleContact" v-if="userStore.isLoggedIn">
             <el-icon><ChatDotRound /></el-icon>联系卖家
           </el-button>
-          <el-button type="success" size="large" class="action-btn action-btn--success" @click="showOrderDialog = true" v-if="userStore.isLoggedIn">
-            <el-icon><ShoppingCart /></el-icon>立即购买
+          <el-button
+            type="success"
+            class="action-btn action-btn--buy"
+            :disabled="goods?.status !== 1"
+            @click="showOrderDialog = true"
+            v-if="userStore.isLoggedIn"
+          >
+            <el-icon><ShoppingCart /></el-icon>{{ goods?.status === 1 ? '立即购买' : buyStatusText }}
           </el-button>
         </div>
 
@@ -119,6 +143,32 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 举报对话框 -->
+    <el-dialog v-model="showReportDialog" title="举报商品" width="480px" class="report-dialog" :rounded="true">
+      <p class="report-tip">请选择举报原因并填写详细描述，我们将尽快审核处理。</p>
+      <el-form label-width="90px" class="report-form">
+        <el-form-item label="举报原因" required>
+          <el-select v-model="reportForm.reason" placeholder="请选择举报原因" style="width:100%">
+            <el-option label="虚假/欺诈信息" value="虚假/欺诈信息" />
+            <el-option label="违禁物品" value="违禁物品" />
+            <el-option label="价格异常" value="价格异常" />
+            <el-option label="图片与实物不符" value="图片与实物不符" />
+            <el-option label="垃圾广告/骚扰" value="垃圾广告/骚扰" />
+            <el-option label="其他原因" value="其他原因" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="详细描述">
+          <el-input v-model="reportForm.description" type="textarea" :rows="3" placeholder="请详细描述举报原因（选填）" maxlength="200" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="showReportDialog = false" size="large">取消</el-button>
+          <el-button type="danger" @click="handleReport" :loading="reporting" size="large">提交举报</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -128,6 +178,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { goodsApi, orderApi } from '@/api'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
+import { Warning, ArrowLeft, ArrowRight, View, Star, ChatDotRound, ShoppingCart } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -138,6 +189,7 @@ const images = ref([])
 const isFavorited = ref(false)
 const loading = ref(true)
 const currentImageIndex = ref(0)
+const showArrow = ref(null)
 
 const sellerName = ref('加载中...')
 const sellerCredit = ref('-')
@@ -147,6 +199,20 @@ const orderTradeMethod = ref('FACE')
 const orderLocation = ref('')
 const orderTime = ref(null)
 const ordering = ref(false)
+
+// 购买按钮状态文字（根据商品状态动态显示）
+const buyStatusText = computed(() => {
+  if (!goods.value) return '加载中...'
+  const m = { 0: '已下架', 2: '已售出', 3: '审核中', '-1': '已删除' }
+  return m[String(goods.value.status)] || '暂不可购买'
+})
+
+const showReportDialog = ref(false)
+const reporting = ref(false)
+const reportForm = ref({
+  reason: '',
+  description: ''
+})
 
 const conditionStars = computed(() => {
   if (!goods.value) return 0
@@ -172,8 +238,43 @@ async function load() {
     if (goods.value.sellerId) {
       fetchSellerInfo(goods.value.sellerId)
     }
+
+    // 保存浏览历史记录
+    saveBrowsingHistory()
   } finally {
     loading.value = false
+  }
+}
+
+function saveBrowsingHistory() {
+  const g = goods.value
+  if (!g) return
+
+  try {
+    const raw = localStorage.getItem('browsing_history')
+    let history = raw ? JSON.parse(raw) : []
+
+    // 移除已有的相同 uuid 记录
+    history = history.filter(item => item.uuid !== g.uuid)
+
+    // 在头部插入新记录
+    history.unshift({
+      uuid: g.uuid,
+      title: g.title,
+      price: g.price,
+      coverUrl: images.value.length > 0 ? images.value[0].url : '',
+      categoryId: g.categoryId || '',
+      viewedAt: new Date().toISOString(),
+    })
+
+    // 最多保留 50 条记录
+    if (history.length > 50) {
+      history = history.slice(0, 50)
+    }
+
+    localStorage.setItem('browsing_history', JSON.stringify(history))
+  } catch {
+    // localStorage 操作失败时静默处理
   }
 }
 
@@ -207,6 +308,16 @@ async function handleFavorite() {
   ElMessage.success(isFavorited.value ? '已收藏' : '已取消收藏')
 }
 
+function prevImage() {
+  if (images.value.length <= 1) return
+  currentImageIndex.value = (currentImageIndex.value - 1 + images.value.length) % images.value.length
+}
+
+function nextImage() {
+  if (images.value.length <= 1) return
+  currentImageIndex.value = (currentImageIndex.value + 1) % images.value.length
+}
+
 function handleContact() {
   router.push(`/chat/${goods.value.sellerId}`)
 }
@@ -225,6 +336,25 @@ async function handleCreateOrder() {
     router.push('/orders')
   } finally {
     ordering.value = false
+  }
+}
+
+async function handleReport() {
+  if (!reportForm.value.reason) {
+    ElMessage.warning('请选择举报原因')
+    return
+  }
+  reporting.value = true
+  try {
+    await goodsApi.report(goods.value.uuid, {
+      reason: reportForm.value.reason,
+      description: reportForm.value.description
+    })
+    ElMessage.success('举报已提交，感谢您的反馈')
+    showReportDialog.value = false
+    reportForm.value = { reason: '', description: '' }
+  } finally {
+    reporting.value = false
   }
 }
 
@@ -267,6 +397,55 @@ onMounted(load)
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+/* 左右切换箭头 */
+.img-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.25s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.main-image-box:hover .img-arrow {
+  opacity: 1;
+}
+
+.img-arrow:hover {
+  background: rgba(0, 0, 0, 0.6);
+  transform: translateY(-50%) scale(1.08);
+}
+
+.img-arrow--left { left: 12px; }
+.img-arrow--right { right: 12px; }
+
+/* 图片计数 */
+.image-counter {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  z-index: 10;
+  padding: 3px 10px;
+  border-radius: var(--sc-radius-full);
+  background: rgba(0, 0, 0, 0.45);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
 .main-image {
@@ -359,54 +538,72 @@ onMounted(load)
   font-weight: 500;
 }
 
-/* 操作按钮组 */
+/* 操作按钮组 — 2x2 等宽网格 */
 .action-buttons {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 
 .action-btn {
   font-size: 15px;
   font-weight: 600;
-  padding: 12px 28px;
-  border-radius: 12px !important;
-  transition: all 0.25s ease;
+  padding: 14px 16px;
+  border-radius: var(--sc-radius-md) !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  height: auto;
+  min-height: 48px;
+  letter-spacing: 0.3px;
 }
 
-.action-btn--outline {
-  border: 2px solid var(--sc-primary) !important;
+/* 举报 — 次要操作 */
+.action-btn--report {
+  border: 1.5px solid #F56C6C !important;
+  color: #F56C6C !important;
+  background: #FEF0F0 !important;
+}
+.action-btn--report:hover {
+  background: #FDE2E2 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(245, 108, 108, 0.18);
+}
+
+/* 收藏 — 次要操作 */
+.action-btn--secondary {
+  border: 1.5px solid var(--sc-primary) !important;
   color: var(--sc-primary) !important;
   background: transparent !important;
 }
-
-.action-btn--outline:hover {
+.action-btn--secondary:hover {
   background: rgba(232, 90, 79, 0.06) !important;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(232, 90, 79, 0.15);
 }
 
-.action-btn--primary {
+/* 联系卖家 — 主要操作 */
+.action-btn--contact {
   background: var(--sc-primary) !important;
   border-color: var(--sc-primary) !important;
-  font-size: 16px;
-  padding: 13px 32px;
+  color: white !important;
 }
-
-.action-btn--primary:hover {
+.action-btn--contact:hover {
   background: var(--sc-primary-dark) !important;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(232, 90, 79, 0.3);
 }
 
-.action-btn--success {
+/* 立即购买 — CTA 最突出 */
+.action-btn--buy {
   background: var(--sc-teal) !important;
   border-color: var(--sc-teal) !important;
+  color: white !important;
   font-size: 16px;
-  padding: 13px 32px;
+  font-weight: 700;
 }
-
-.action-btn--success:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
+.action-btn--buy:hover {
+  background: #16A085 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(26, 188, 156, 0.35);
 }
 
 /* 卖家信息卡 */
@@ -492,5 +689,22 @@ onMounted(load)
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+/* ===== 举报对话框 ===== */
+.report-dialog :deep(.el-dialog) {
+  border-radius: 28px !important;
+  overflow: hidden;
+}
+
+.report-tip {
+  color: var(--sc-text-secondary);
+  font-size: 14px;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.report-form {
+  padding: 4px 0;
 }
 </style>

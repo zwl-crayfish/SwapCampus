@@ -36,6 +36,8 @@ public class Order {
 
     private Integer buyerRating;
     private String buyerReview;
+    private Integer sellerRating;
+    private String sellerReview;
     private LocalDateTime completedAt;
 
     @TableField(fill = FieldFill.INSERT)

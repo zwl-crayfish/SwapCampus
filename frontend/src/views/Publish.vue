@@ -20,8 +20,37 @@
           </template>
           <div class="section-grid">
             <el-form-item label="商品标题" prop="title" class="full-width">
-              <el-input v-model="form.title" placeholder="请输入商品标题（最多50字）" maxlength="50" show-word-limit size="large" />
+              <div class="title-input-row">
+                <el-input v-model="form.title" placeholder="请输入商品标题（最多50字）" maxlength="50" show-word-limit size="large" @blur="onTitleBlur" />
+                <button class="ai-trigger-btn" :class="{ loading: aiAnalyzing }" title="AI 智能分析" @click="triggerAISuggest">✨</button>
+              </div>
             </el-form-item>
+
+            <!-- AI 智能助手面板 -->
+            <div class="ai-assist-panel" :class="{ analyzing: aiAnalyzing }" v-if="aiSuggestions.length > 0 || pricingSuggestion || aiAnalyzing">
+              <!-- 分类建议 -->
+              <div class="ai-section ai-category-suggest" v-if="aiSuggestions.length > 0">
+                <div class="ai-label">✨ AI 推荐分类</div>
+                <div class="ai-chips">
+                  <span v-for="(cat, i) in aiSuggestions" :key="i"
+                        class="ai-chip" :class="{ active: form.categoryId === cat.id }"
+                        @click="form.categoryId = cat.id">
+                    {{ cat.name }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- 定价建议 -->
+              <div class="ai-section ai-price-suggest" v-if="pricingSuggestion">
+                <div class="ai-label">💡 定价建议</div>
+                <div class="price-suggest-bar">
+                  <span class="suggest-range">¥{{ pricingSuggestion.min }} ~ ¥{{ pricingSuggestion.max }}</span>
+                  <span class="suggest-avg">均 ¥{{ pricingSuggestion.avg }}</span>
+                  <button type="button" class="adopt-btn" @click="adoptPrice">采纳</button>
+                </div>
+              </div>
+            </div>
+
             <el-form-item label="商品分类" prop="categoryId">
               <el-select v-model="form.categoryId" placeholder="选择分类" size="large" style="width:100%">
                 <el-option v-for="cat in categories" :key="cat.id" :label="cat.name" :value="cat.id" />
@@ -125,7 +154,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { goodsApi, categoryApi } from '@/api'
 import { ElMessage } from 'element-plus'
@@ -137,6 +166,21 @@ const isEdit = ref(!!route.params.uuid)
 const submitting = ref(false)
 const categories = ref([])
 const fileList = ref([])
+
+// ===== AI 智能分类与定价建议 =====
+const aiSuggestions = ref([])
+const pricingSuggestion = ref(null)
+const aiAnalyzing = ref(false)
+
+// 关键词到分类名称的映射（用于模糊匹配）
+const keywordCategoryMap = [
+  { keywords: ['书', '教材', '课本', '考研', '英语', '数学', '计算机', '编程', '小说', '文学', '漫画'], basePrice: [5, 200], categoryHints: ['书籍', '教材', '图书', '教辅'] },
+  { keywords: ['手机', '电脑', '笔记本', '平板', '耳机', '键盘', '鼠标', '显示器', '相机', 'iPad', '数码'], basePrice: [50, 5000], categoryHints: ['数码', '电子', '手机', '电脑'] },
+  { keywords: ['衣服', '鞋', '裙', '裤', '外套', '卫衣', '包包', '帽子', '配饰', '穿搭'], basePrice: [10, 800], categoryHints: ['服饰', '服装', '鞋包', '衣'] },
+  { keywords: ['自行车', '滑板', '哑铃', '瑜伽', '篮球', '足球', '球拍', '健身', '运动'], basePrice: [20, 1500], categoryHints: ['运动', '健身', '体育'] },
+  { keywords: ['台灯', '椅子', '收纳', '床', '沙发', '桌子', '窗帘', '地毯', '装饰', '摆件', '家居'], basePrice: [15, 600], categoryHints: ['家居', '生活', '日用'] },
+  { keywords: ['化妆品', '口红', '护肤', '面膜', '香水', '洗护', '美妆', '防晒'], basePrice: [10, 500], categoryHints: ['美妆', '护肤', '彩妆'] },
+]
 
 const conditionMarks = {
   1: '废品', 3: '可用', 5: '良好', 7: '较新', 10: '全新'
@@ -176,7 +220,7 @@ async function handleSubmit() {
       ElMessage.success('修改成功')
     } else {
       await goodsApi.publish(formData)
-      ElMessage.success('发布成功')
+      ElMessage.success('发布成功！商品正在等待管理员审核，通过后将自动上架')
     }
     router.push('/my-goods')
   } catch {
@@ -184,6 +228,101 @@ async function handleSubmit() {
   } finally {
     submitting.value = false
   }
+}
+
+// ===== AI 智能分析函数 =====
+
+/** 根据标题关键词匹配最相关的分类 */
+function matchCategoriesByTitle(title) {
+  const matched = []
+  for (const mapItem of keywordCategoryMap) {
+    const hit = mapItem.keywords.some(kw => title.includes(kw))
+    if (hit) {
+      // 在 categories 中模糊匹配相关分类
+      const relatedCats = categories.value.filter(cat =>
+        mapItem.categoryHints.some(hint => cat.name.includes(hint))
+      )
+      matched.push(...relatedCats)
+    }
+  }
+  // 去重，取前3个
+  const unique = []
+  const seen = new Set()
+  for (const cat of matched) {
+    if (!seen.has(cat.id)) {
+      seen.add(cat.id)
+      unique.push(cat)
+      if (unique.length >= 3) break
+    }
+  }
+  return unique
+}
+
+/** 根据匹配结果生成价格建议 */
+function generatePriceSuggestion(title, matchedCategories) {
+  let baseMin = 10
+  let baseMax = 500
+  // 找到匹配的分类对应的价格区间
+  for (const mapItem of keywordCategoryMap) {
+    const hit = mapItem.keywords.some(kw => title.includes(kw))
+    if (hit) {
+      baseMin = mapItem.basePrice[0]
+      baseMax = mapItem.basePrice[1]
+      break
+    }
+  }
+  // 加入随机波动使看起来真实
+  const randomFactor = 0.7 + Math.random() * 0.6 // 0.7 ~ 1.3
+  const min = Math.round(baseMin * randomFactor)
+  const max = Math.round(baseMax * randomFactor * (0.8 + Math.random() * 0.4))
+  const avg = Math.round((min + max) / 2)
+  return { min, max, avg }
+}
+
+/** 触发AI智能分析 */
+async function triggerAISuggest() {
+  const title = form.value.title?.trim()
+  if (!title) {
+    ElMessage.warning('请先输入商品标题')
+    return
+  }
+  aiAnalyzing.value = true
+  aiSuggestions.value = []
+  pricingSuggestion.value = null
+
+  // 模拟 AI 分析过程（800ms 延迟）
+  await new Promise(resolve => setTimeout(resolve, 800))
+
+  try {
+    // a. 根据标题关键词匹配分类
+    const matched = matchCategoriesByTitle(title)
+    aiSuggestions.value = matched.length > 0 ? matched : categories.value.slice(0, 3)
+
+    // b. 生成价格建议
+    pricingSuggestion.value = generatePriceSuggestion(title, aiSuggestions.value)
+
+    ElMessage.success('AI 分析完成')
+  } catch (e) {
+    console.error('AI 分析出错:', e)
+    ElMessage.error('AI 分析失败，请重试')
+  } finally {
+    aiAnalyzing.value = false
+  }
+}
+
+/** 标题失焦时自动触发AI分析（标题超过2个字） */
+function onTitleBlur() {
+  const title = form.value.title?.trim()
+  if (title && title.length >= 2 && aiSuggestions.value.length === 0) {
+    triggerAISuggest()
+  }
+}
+
+/** 采纳定价建议 */
+function adoptPrice() {
+  if (!pricingSuggestion.value) return
+  form.value.price = pricingSuggestion.value.avg
+  ElMessage.success('已采纳AI定价建议')
 }
 
 onMounted(async () => {
@@ -445,5 +584,215 @@ onMounted(async () => {
   font-size: 15px !important;
   font-weight: 600 !important;
   border-radius: 14px !important;
+}
+
+/* ===== AI 智能助手面板 ===== */
+.title-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.title-input-row .el-input {
+  flex: 1;
+}
+
+/* AI 触发按钮 - 圆形紫色渐变 */
+.ai-trigger-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #9b59b6, #8e44ad);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.35s ease;
+  box-shadow: 0 2px 8px rgba(155, 89, 182, 0.35);
+}
+
+.ai-trigger-btn:hover {
+  transform: rotate(180deg) scale(1.1);
+  box-shadow: 0 4px 16px rgba(155, 89, 182, 0.55), 0 0 24px rgba(155, 89, 182, 0.25);
+}
+
+.ai-trigger-btn:active {
+  transform: rotate(180deg) scale(0.95);
+}
+
+/* AI 分析中的 loading 状态 */
+.ai-trigger-btn.loading {
+  pointer-events: none;
+  background: linear-gradient(135deg, #bdc3c7, #95a5a6);
+}
+
+.ai-trigger-btn.loading::after {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: ai-spin 0.7s linear infinite;
+}
+
+@keyframes ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* AI 助手面板整体 */
+.ai-assist-panel {
+  margin-top: 12px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #f8f5ff, #f3effa);
+  border-radius: var(--sc-radius-lg);
+  border-left: 4px solid #9b59b6;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 微妙的点阵图案背景 */
+.ai-assist-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: radial-gradient(circle, rgba(155, 89, 182, 0.06) 1px, transparent 1px);
+  background-size: 16px 16px;
+  pointer-events: none;
+}
+
+/* shimmer 骚屏动效（分析中） */
+.ai-assist-panel.analyzing::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  animation: ai-shimmer 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes ai-shimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+/* 每个 AI 分区 */
+.ai-section {
+  position: relative;
+  z-index: 1;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px dashed rgba(155, 89, 182, 0.2);
+}
+
+.ai-section:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+/* AI 标签文字 */
+.ai-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #8e44ad;
+  margin-bottom: 10px;
+  letter-spacing: 0.3px;
+}
+
+/* 分类芯片容器 */
+.ai-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 分类芯片 */
+.ai-chip {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sc-text-secondary);
+  background: #fff;
+  border: 1.5px solid #dcdfe6;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  user-select: none;
+}
+
+.ai-chip:hover {
+  border-color: #9b59b6;
+  color: #8e44ad;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(155, 89, 182, 0.15);
+}
+
+.ai-chip.active {
+  background: linear-gradient(135deg, #9b59b6, #8e44ad);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 3px 12px rgba(142, 68, 173, 0.3);
+}
+
+/* 价格建议行 */
+.price-suggest-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* 价格区间 - 渐变文字 */
+.suggest-range {
+  font-size: 20px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #9b59b6, #3498db);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.5px;
+}
+
+/* 均价显示 */
+.suggest-avg {
+  font-size: 13px;
+  color: #909399;
+  font-weight: 600;
+}
+
+/* 采纳按钮 */
+.adopt-btn {
+  margin-left: auto;
+  padding: 7px 22px;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #9b59b6, #4a69bd);
+  cursor: pointer;
+  transition: all 0.28s ease;
+  box-shadow: 0 3px 10px rgba(74, 105, 189, 0.25);
+}
+
+.adopt-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(74, 105, 189, 0.38);
+}
+
+.adopt-btn:active {
+  transform: translateY(0) scale(0.96);
 }
 </style>

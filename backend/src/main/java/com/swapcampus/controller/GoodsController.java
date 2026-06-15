@@ -150,12 +150,131 @@ public class GoodsController {
     public ApiResponse<Map<String, Object>> myPublished(PageQuery query, Authentication auth) {
         Long userId = (Long) auth.getPrincipal();
         Page<Goods> page = goodsService.getSellerGoods(userId, query);
+
+        // 为每个商品补充封面图URL
+        List<Map<String, Object>> enrichedRecords = new ArrayList<>();
+        for (Goods g : page.getRecords()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", g.getId());
+            item.put("uuid", g.getUuid());
+            item.put("sellerId", g.getSellerId());
+            item.put("categoryId", g.getCategoryId());
+            item.put("title", g.getTitle());
+            item.put("description", g.getDescription());
+            item.put("price", g.getPrice());
+            item.put("originalPrice", g.getOriginalPrice());
+            item.put("conditionLevel", g.getConditionLevel());
+            item.put("isBargain", g.getIsBargain());
+            item.put("tradeMethod", g.getTradeMethod());
+            item.put("campusLocation", g.getCampusLocation());
+            item.put("viewCount", g.getViewCount());
+            item.put("favoriteCount", g.getFavoriteCount());
+            item.put("status", g.getStatus());
+            item.put("createdAt", g.getCreatedAt());
+
+            List<GoodsImage> imgs = goodsService.getImages(g.getUuid());
+            if (!imgs.isEmpty()) {
+                item.put("coverUrl", imgs.get(0).getUrl());
+            }
+            enrichedRecords.add(item);
+        }
+
         Map<String, Object> result = Map.of(
-                "records", page.getRecords(),
+                "records", enrichedRecords,
                 "total", page.getTotal(),
                 "page", page.getCurrent(),
                 "size", page.getSize()
         );
+        return ApiResponse.success(result);
+    }
+
+    /**
+     * 我的收藏
+     */
+    @GetMapping("/my-favorites")
+    public ApiResponse<Map<String, Object>> myFavorites(PageQuery query, Authentication auth) {
+        Long userId = (Long) auth.getPrincipal();
+        Page<Goods> page = goodsService.getMyFavorites(userId, query);
+
+        List<Map<String, Object>> enrichedRecords = new ArrayList<>();
+        for (Goods g : page.getRecords()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("uuid", g.getUuid());
+            item.put("title", g.getTitle());
+            item.put("description", g.getDescription());
+            item.put("price", g.getPrice());
+            item.put("originalPrice", g.getOriginalPrice());
+            item.put("conditionLevel", g.getConditionLevel());
+            item.put("favoriteCount", g.getFavoriteCount());
+            item.put("status", g.getStatus());
+            item.put("createdAt", g.getCreatedAt());
+
+            List<GoodsImage> imgs = goodsService.getImages(g.getUuid());
+            if (!imgs.isEmpty()) {
+                item.put("coverUrl", imgs.get(0).getUrl());
+            }
+            enrichedRecords.add(item);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("records", enrichedRecords);
+        result.put("total", page.getTotal());
+        result.put("page", page.getCurrent());
+        result.put("size", page.getSize());
+        return ApiResponse.success(result);
+    }
+
+    /**
+     * 举报商品
+     */
+    @PostMapping("/{uuid}/report")
+    public ApiResponse<Void> reportGoods(
+            @PathVariable String uuid,
+            @RequestParam String reason,
+            @RequestParam(required = false) String description,
+            Authentication auth) {
+        Long userId = (Long) auth.getPrincipal();
+        goodsService.reportGoods(uuid, userId, reason, description);
+        return ApiResponse.success("举报成功，我们会尽快处理", null);
+    }
+
+    /**
+     * 个性化推荐（基于热门商品）
+     */
+    @GetMapping("/recommendations")
+    public ApiResponse<Map<String, Object>> recommendations(PageQuery query) {
+        // 使用排序为浏览量降序来获取推荐
+        PageQuery recQuery = PageQuery.builder()
+                .page(query.getPage()).size(8)
+                .sortBy("view_count").sortOrder("desc").build();
+        Page<Goods> page = goodsService.searchGoods(recQuery);
+        List<Goods> records = page.getRecords();
+
+        List<Map<String, Object>> enrichedRecords = new ArrayList<>();
+        for (int i = 0; i < records.size(); i++) {
+            Goods g = records.get(i);
+            Map<String, Object> item = new HashMap<>();
+            item.put("uuid", g.getUuid());
+            item.put("title", g.getTitle());
+            item.put("price", g.getPrice());
+            item.put("coverUrl", "");
+            item.put("conditionLevel", g.getConditionLevel());
+            item.put("favoriteCount", g.getFavoriteCount());
+            item.put("viewCount", g.getViewCount());
+            // 模拟匹配度：越靠前匹配度越高
+            int matchScore = Math.max(60, 98 - i * 5 + (int)(Math.random() * 6));
+            item.put("matchScore", matchScore);
+
+            List<GoodsImage> imgs = goodsService.getImages(g.getUuid());
+            if (!imgs.isEmpty()) {
+                item.put("coverUrl", imgs.get(0).getUrl());
+            }
+            enrichedRecords.add(item);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("records", enrichedRecords.subList(0, Math.min(enrichedRecords.size(), 8)));
+        result.put("total", Math.min(page.getTotal(), 8));
         return ApiResponse.success(result);
     }
 }

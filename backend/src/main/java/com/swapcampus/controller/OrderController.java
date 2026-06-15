@@ -78,7 +78,7 @@ public class OrderController {
     }
 
     /**
-     * 评价订单
+     * 买家评价
      */
     @PutMapping("/{uuid}/review")
     public ApiResponse<Void> review(@PathVariable String uuid,
@@ -87,6 +87,19 @@ public class OrderController {
                                      Authentication auth) {
         Long userId = (Long) auth.getPrincipal();
         orderService.reviewOrder(uuid, userId, rating, review);
+        return ApiResponse.success("评价成功", null);
+    }
+
+    /**
+     * 卖家评价买家
+     */
+    @PutMapping("/{uuid}/seller-review")
+    public ApiResponse<Void> sellerReview(@PathVariable String uuid,
+                                           @RequestParam Integer rating,
+                                           @RequestParam(required = false) String review,
+                                           Authentication auth) {
+        Long userId = (Long) auth.getPrincipal();
+        orderService.sellerReviewOrder(uuid, userId, rating, review);
         return ApiResponse.success("评价成功", null);
     }
 

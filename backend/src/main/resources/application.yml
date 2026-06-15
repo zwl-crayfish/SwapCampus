@@ -5,10 +5,10 @@ spring:
   application:
     name: swapcampus
 
-  # 使用 H2 内存数据库
+  # 使用 H2 文件数据库（数据持久化，重启不丢失）
   datasource:
     driver-class-name: org.h2.Driver
-    url: jdbc:h2:mem:swapcampus;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DATABASE_TO_UPPER=FALSE
+    url: jdbc:h2:file:./data/swapcampus;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DATABASE_TO_UPPER=FALSE
     username: sa
     password: 
 

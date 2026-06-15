@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MainLayout from '@/components/MainLayout.vue'
+import { getToken, getUser } from '@/composables/useMultiAuth'
 
 const routes = [
   {
@@ -40,14 +41,14 @@ const router = createRouter({
   },
 })
 
-// 路由守卫
+// 路由守卫 — 使用多账号模块读取 token 和用户信息
 router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('token')
-  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  const token = getToken()
+  const user = getUser()
 
   if (to.meta.auth && !token) {
     next('/login')
-  } else if (to.meta.admin && user.role !== 1) {
+  } else if (to.meta.admin && user?.role !== 1) {
     next('/')
   } else {
     next()

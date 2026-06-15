@@ -8,9 +8,11 @@ import com.swapcampus.dto.PageQuery;
 import com.swapcampus.entity.Goods;
 import com.swapcampus.entity.GoodsImage;
 import com.swapcampus.entity.Favorite;
+import com.swapcampus.entity.Report;
 import com.swapcampus.repository.GoodsMapper;
 import com.swapcampus.repository.GoodsImageMapper;
 import com.swapcampus.repository.FavoriteMapper;
+import com.swapcampus.repository.ReportMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.time.LocalDateTime;
 
 /**
@@ -30,6 +33,7 @@ public class GoodsService {
     private final GoodsMapper goodsMapper;
     private final GoodsImageMapper goodsImageMapper;
     private final FavoriteMapper favoriteMapper;
+    private final ReportMapper reportMapper;
     private final FileService fileService;
 
     /**
@@ -40,6 +44,14 @@ public class GoodsService {
         return goodsMapper.searchGoods(page,
                 query.getKeyword(),
                 query.getCategoryId(),
+                query.getMinPrice(),
+                query.getMaxPrice(),
+                query.getTimeRange(),
+                query.getStatus(),
+                query.getViewMin(),
+                query.getFavMin(),
+                query.getConditionMin(),
+                query.getConditionMax(),
                 query.getSortBy(),
                 query.getSortOrder());
     }
@@ -89,7 +101,7 @@ public class GoodsService {
                 .campusLocation(request.getCampusLocation())
                 .viewCount(0)
                 .favoriteCount(0)
-                .status(1)  // 直接上架
+                .status(3)  // 审核中，需管理员审核后上架
                 .createdAt(LocalDateTime.now())  // 显式设置发布时间
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -152,6 +164,10 @@ public class GoodsService {
         if (!goods.getSellerId().equals(userId)) {
             throw new RuntimeException("无权限操作");
         }
+        // 状态值白名单校验：-1删除, 0下架, 1在售, 2已售出
+        if (status == null || !Set.of(-1, 0, 1, 2).contains(status)) {
+            throw new RuntimeException("无效的状态值");
+        }
         goods.setStatus(status);
         goodsMapper.updateById(goods);
     }
@@ -203,6 +219,57 @@ public class GoodsService {
                         .eq(Favorite::getUserId, userId)
                         .eq(Favorite::getGoodsUuid, goodsUuid)
         ) > 0;
+    }
+
+    /**
+     * 获取用户收藏的商品列表（分页）
+     */
+    public Page<Goods> getMyFavorites(Long userId, PageQuery query) {
+        // 查出用户所有收藏的 goodsUuid
+        List<Favorite> favorites = favoriteMapper.selectList(
+                new LambdaQueryWrapper<Favorite>().eq(Favorite::getUserId, userId)
+        );
+        if (favorites.isEmpty()) {
+            return new Page<>(query.getPage(), query.getSize());
+        }
+        Set<String> uuids = favorites.stream().map(Favorite::getGoodsUuid).collect(java.util.stream.Collectors.toSet());
+        // 分页查询这些商品
+        Page<Goods> page = new Page<>(query.getPage(), query.getSize());
+        LambdaQueryWrapper<Goods> wrapper = new LambdaQueryWrapper<Goods>()
+                .in(Goods::getUuid, uuids)
+                .ne(Goods::getStatus, -1)
+                .orderByDesc(Goods::getCreatedAt);
+        return goodsMapper.selectPage(page, wrapper);
+    }
+
+    /**
+     * 用户举报商品
+     */
+    public void reportGoods(String goodsUuid, Long reporterId, String reason, String description) {
+        Goods goods = goodsMapper.findByUuid(goodsUuid);
+        if (goods == null) {
+            throw new RuntimeException("商品不存在");
+        }
+
+        // 检查是否已举报过（同一用户对同一商品只能举报一次）
+        long existingCount = reportMapper.selectCount(
+                new LambdaQueryWrapper<Report>()
+                        .eq(Report::getReporterId, reporterId)
+                        .eq(Report::getGoodsUuid, goodsUuid)
+        );
+        if (existingCount > 0) {
+            throw new RuntimeException("您已举报过该商品");
+        }
+
+        Report report = new Report();
+        report.setReporterId(reporterId);
+        report.setGoodsUuid(goodsUuid);
+        report.setReportedUserId(goods.getSellerId());
+        report.setReason(reason);
+        report.setDescription(description != null ? description : "");
+        report.setStatus(0); // 待处理
+        report.setCreatedAt(LocalDateTime.now());
+        reportMapper.insert(report);
     }
 
     private void uploadImages(String uuid, MultipartFile[] images) {

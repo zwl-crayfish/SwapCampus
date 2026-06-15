@@ -27,6 +27,6 @@ public interface MessageMapper extends BaseMapper<Message> {
 
     @Select("SELECT DISTINCT " +
             "CASE WHEN sender_id = #{userId} THEN receiver_id ELSE sender_id END AS contact_id " +
-            "FROM message WHERE sender_id = #{userId} OR receiver_id = #{userId}")
+            "FROM message WHERE (sender_id = #{userId} OR receiver_id = #{userId})")
     Page<Long> findContacts(Page<Long> page, @Param("userId") Long userId);
 }
