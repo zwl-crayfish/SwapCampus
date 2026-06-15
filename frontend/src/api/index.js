@@ -92,6 +92,11 @@ export const categoryApi = {
   list: () => http.get('/category'),
 }
 
+// AI 智能助手 API（对接智谱 GLM-4-Flash 大模型）
+export const aiApi = {
+  suggest: (data) => http.post('/ai/suggest', data),
+}
+
 // Admin API
 export const adminApi = {
   dashboard: () => http.get('/admin/dashboard'),

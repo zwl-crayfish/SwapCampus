@@ -31,6 +31,13 @@ mysql_data/
 redis_data/
 minio_data/
 
+# H2 / Local DB files
+backend/data/
+dump.rdb
+
+# Temp scripts
+_fix_status.js
+
 # Temp
 /tmp/
 *.tmp

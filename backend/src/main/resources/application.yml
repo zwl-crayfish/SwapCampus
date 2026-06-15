@@ -70,6 +70,19 @@ app:
     # 本地文件存储路径（MinIO 不可用时回退）
     local-storage-path: ./uploads
 
+# AI 智能助手配置（智谱 GLM-4-Flash）
+ai:
+  # API Key：从 https://open.bigmodel.cn 获取（免费注册即可获得）
+  api-key: f24c228b65fa4e2990d4a59cae739705.T4taE5whDXxaaiwI
+  # API 地址（默认为智谱 GLM-4，兼容 OpenAI 格式）
+  # 智谱: https://open.bigmodel.cn/api/paas/v4/chat/completions
+  # DeepSeek: https://api.deepseek.com/v1/chat/completions
+  api-url: ${AI_API_URL:https://open.bigmodel.cn/api/paas/v4/chat/completions}
+  # 模型名称
+  model: ${AI_MODEL:glm-4-flash}
+  # 超时时间（秒）
+  timeout: ${AI_TIMEOUT:10}
+
 # 日志
 logging:
   level:

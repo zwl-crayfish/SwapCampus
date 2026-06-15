@@ -42,11 +42,24 @@
 
               <!-- 定价建议 -->
               <div class="ai-section ai-price-suggest" v-if="pricingSuggestion">
-                <div class="ai-label">💡 定价建议</div>
+                <div class="ai-label">
+                  💡 定价建议
+                  <span class="ai-source-tag" :class="aiSource === 'LLM' ? 'source-llm' : 'source-local'">
+                    {{ aiSource === 'LLM' ? '🤖 大模型' : '📋 本地规则' }}
+                  </span>
+                </div>
                 <div class="price-suggest-bar">
-                  <span class="suggest-range">¥{{ pricingSuggestion.min }} ~ ¥{{ pricingSuggestion.max }}</span>
-                  <span class="suggest-avg">均 ¥{{ pricingSuggestion.avg }}</span>
-                  <button type="button" class="adopt-btn" @click="adoptPrice">采纳</button>
+                  <span class="suggest-range">¥{{ pricingSuggestion.min ?? '--' }} ~ ¥{{ pricingSuggestion.max ?? '--' }}</span>
+                  <span class="suggest-avg">均 ¥{{ pricingSuggestion.avg ?? '--' }}</span>
+                  <button type="button" class="adopt-btn" @click="adoptPrice" :disabled="!pricingSuggestion.avg">采纳</button>
+                </div>
+                <div class="price-hint">
+                  基于「{{ (conditionMarks[form.conditionLevel] || {}).label || '较新' }}」成色
+                  <template v-if="form.originalPrice"> + 原价 ¥{{ form.originalPrice }}</template>
+                  综合估算
+                </div>
+                <div class="ai-reasoning" v-if="aiReasoning">
+                  📝 {{ aiReasoning }}
                 </div>
               </div>
             </div>
@@ -81,11 +94,9 @@
               </div>
               <el-slider v-model="form.conditionLevel" :min="1" :max="10" show-stops size="large" />
               <div class="condition-labels">
-                <span data-pos="0">废品</span>
-                <span data-pos="25">可用</span>
-                <span data-pos="50">良好</span>
-                <span data-pos="75">较新</span>
-                <span data-pos="100">全新</span>
+                <template v-for="(info, level) in conditionMarks" :key="level">
+                  <span :style="{ left: ((level - 1) / 9 * 100) + '%' }">{{ info.label }}</span>
+                </template>
               </div>
             </div>
           </el-form-item>
@@ -156,7 +167,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { goodsApi, categoryApi } from '@/api'
+import { goodsApi, categoryApi, aiApi } from '@/api'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -171,6 +182,8 @@ const fileList = ref([])
 const aiSuggestions = ref([])
 const pricingSuggestion = ref(null)
 const aiAnalyzing = ref(false)
+const aiSource = ref('')        // 'LLM' 或 'LOCAL_FALLBACK'
+const aiReasoning = ref('')     // AI 的推理说明
 
 // 关键词到分类名称的映射（用于模糊匹配）
 const keywordCategoryMap = [
@@ -183,7 +196,16 @@ const keywordCategoryMap = [
 ]
 
 const conditionMarks = {
-  1: '废品', 3: '可用', 5: '良好', 7: '较新', 10: '全新'
+  1: { label: '废品', factor: 0.15 },
+  2: { label: '较差', factor: 0.3 },
+  3: { label: '可用', factor: 0.45 },
+  4: { label: '一般', factor: 0.55 },
+  5: { label: '良好', factor: 0.65 },
+  6: { label: '不错', factor: 0.75 },
+  7: { label: '较新', factor: 0.85 },
+  8: { label: '很新', factor: 0.92 },
+  9: { label: '近全新', factor: 0.97 },
+  10: { label: '全新', factor: 1.0 },
 }
 
 const form = ref({
@@ -258,28 +280,57 @@ function matchCategoriesByTitle(title) {
   return unique
 }
 
-/** 根据匹配结果生成价格建议 */
+/** 根据匹配结果、成色等级、原价生成合理的价格建议 */
 function generatePriceSuggestion(title, matchedCategories) {
+  // ① 找到命中的分类，取其预设价格区间
   let baseMin = 10
   let baseMax = 500
-  // 找到匹配的分类对应的价格区间
   for (const mapItem of keywordCategoryMap) {
-    const hit = mapItem.keywords.some(kw => title.includes(kw))
-    if (hit) {
+    if (mapItem.keywords.some(kw => title.includes(kw))) {
       baseMin = mapItem.basePrice[0]
       baseMax = mapItem.basePrice[1]
       break
     }
   }
-  // 加入随机波动使看起来真实
-  const randomFactor = 0.7 + Math.random() * 0.6 // 0.7 ~ 1.3
-  const min = Math.round(baseMin * randomFactor)
-  const max = Math.round(baseMax * randomFactor * (0.8 + Math.random() * 0.4))
-  const avg = Math.round((min + max) / 2)
-  return { min, max, avg }
+
+  // ② 计算基准价：分类中值
+  const categoryMid = (baseMin + baseMax) / 2
+
+  // ③ 成色系数：成色越低，建议售价越低（废品15% → 全新100%）
+  const condLevel = form.value.conditionLevel || 7
+  const condFactor = (conditionMarks[condLevel] || { factor: 0.85 }).factor
+
+  // ④ 如果用户填了原价，以原价为基准；否则以分类中值为基准
+  let basePrice = form.value.originalPrice || categoryMid
+
+  // 原价不应低于分类最低价，也不应高于分类最高价的1.5倍（防止原价填错）
+  basePrice = Math.max(baseMin, Math.min(basePrice, baseMax * 1.5))
+
+  // ⑤ 成色折算后的合理售价
+  let suggestedPrice = basePrice * condFactor
+
+  // ⑥ 小幅度随机波动（±12%，让建议看起来自然但不离谱）
+  const randomFactor = 0.88 + Math.random() * 0.24   // 0.88 ~ 1.12
+  suggestedPrice = Math.round(suggestedPrice * randomFactor)
+
+  // ⑦ 确保价格在合理范围内：不低于分类最低价的30%，不超过原价或分类最高价
+  const minPrice = Math.max(Math.round(baseMin * 0.3), Math.round(suggestedPrice * 0.65))
+  const maxPrice = Math.min(
+    Math.round(form.value.originalPrice || baseMax),
+    Math.round(suggestedPrice * 1.4),
+    Math.round(baseMax * 1.2)
+  )
+  const avg = Math.round((minPrice + maxPrice) / 2)
+
+  // ⑧ 保证 min ≤ avg ≤ max 且均为正数
+  return {
+    min: Math.max(1, Math.min(minPrice, avg)),
+    max: Math.max(minPrice, maxPrice),
+    avg: Math.max(1, avg),
+  }
 }
 
-/** 触发AI智能分析 */
+/** 触发AI智能分析（优先调用LLM大模型，失败时降级为本地规则引擎） */
 async function triggerAISuggest() {
   const title = form.value.title?.trim()
   if (!title) {
@@ -289,22 +340,69 @@ async function triggerAISuggest() {
   aiAnalyzing.value = true
   aiSuggestions.value = []
   pricingSuggestion.value = null
-
-  // 模拟 AI 分析过程（800ms 延迟）
-  await new Promise(resolve => setTimeout(resolve, 800))
+  aiSource.value = ''
+  aiReasoning.value = ''
 
   try {
-    // a. 根据标题关键词匹配分类
-    const matched = matchCategoriesByTitle(title)
-    aiSuggestions.value = matched.length > 0 ? matched : categories.value.slice(0, 3)
+    // ★ 优先尝试调用后端 LLM 接口（智谱 GLM-4-Flash）
+    const llmResult = await aiApi.suggest({
+      title: title,
+      originalPrice: form.value.originalPrice,
+      conditionLevel: form.value.conditionLevel,
+    })
 
-    // b. 生成价格建议
-    pricingSuggestion.value = generatePriceSuggestion(title, aiSuggestions.value)
+    // LLM 返回成功 — 使用大模型结果
+    if (llmResult && llmResult.suggestedCategories) {
+      // 将 LLM 返回的分类名匹配到后端分类列表
+      const matchedCats = []
+      for (const catName of llmResult.suggestedCategories) {
+        const found = categories.value.find(c =>
+          c.name.includes(catName) || catName.includes(c.name)
+        )
+        if (found && !matchedCats.some(c => c.id === found.id)) {
+          matchedCats.push(found)
+        }
+      }
+      aiSuggestions.value = matchedCats.length > 0 ? matchedCats : categories.value.slice(0, 3)
 
-    ElMessage.success('AI 分析完成')
+      // LLM 价格区间
+      if (llmResult.priceRange) {
+        pricingSuggestion.value = {
+          min: llmResult.priceRange.min,
+          max: llmResult.priceRange.max,
+          avg: llmResult.priceRange.suggested,
+        }
+      }
+
+      aiSource.value = llmResult.source || 'LLM'
+      aiReasoning.value = llmResult.reasoning || ''
+      ElMessage.success('AI 智能分析完成（基于大模型）')
+      return
+    }
+
+    // LLM 返回了但数据不完整 → 走降级
+    throw new Error('LLM 返回数据不完整')
+
   } catch (e) {
-    console.error('AI 分析出错:', e)
-    ElMessage.error('AI 分析失败，请重试')
+    // ★ LLM 调用失败 → 降级为本地规则引擎
+    console.warn('AI 大模型不可用，降级为本地规则:', e?.message || e)
+
+    try {
+      // a. 根据标题关键词匹配分类
+      const matched = matchCategoriesByTitle(title)
+      aiSuggestions.value = matched.length > 0 ? matched : categories.value.slice(0, 3)
+
+      // b. 用本地算法生成价格建议（考虑成色+原价）
+      pricingSuggestion.value = generatePriceSuggestion(title, aiSuggestions.value)
+
+      aiSource.value = 'LOCAL_FALLBACK'
+      aiReasoning.value = '当前 AI 服务暂不可用，已使用本地规则引擎生成建议'
+      ElMessage.warning('AI 服务暂时不可用，已切换为本地建议')
+
+    } catch (localErr) {
+      console.error('本地规则引擎也失败了:', localErr)
+      ElMessage.error('AI 分析失败，请手动填写')
+    }
   } finally {
     aiAnalyzing.value = false
   }
@@ -485,7 +583,7 @@ onMounted(async () => {
   position: relative;
   height: 28px;
   margin-top: -4px;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--sc-text-muted);
 }
 .condition-labels span {
@@ -493,11 +591,6 @@ onMounted(async () => {
   transform: translateX(-50%);
   white-space: nowrap;
 }
-.condition-labels span[data-pos="0"]   { left: 0%; }
-.condition-labels span[data-pos="25"]  { left: 25%; }
-.condition-labels span[data-pos="50"]  { left: 50%; }
-.condition-labels span[data-pos="75"]  { left: 75%; }
-.condition-labels span[data-pos="100"] { left: 100%; }
 
 /* ===== 图片上传区 ===== */
 .upload-card :deep(.el-card__header) {
@@ -794,5 +887,46 @@ onMounted(async () => {
 
 .adopt-btn:active {
   transform: translateY(0) scale(0.96);
+}
+
+/* 定价建议提示文字 */
+.price-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* AI 数据来源标签 */
+.ai-source-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+  vertical-align: middle;
+  font-weight: normal;
+}
+.source-llm {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+.source-local {
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffcc80;
+}
+
+/* AI 推理说明 */
+.ai-reasoning {
+  margin-top: 6px;
+  padding: 6px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.5;
+  text-align: left;
 }
 </style>

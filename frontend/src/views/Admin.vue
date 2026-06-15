@@ -136,7 +136,7 @@
                 <tr v-for="(item, index) in reviewGoods" :key="item.goods.uuid" :class="{ 'odd-row': index % 2 === 1 }">
                   <td class="thumb-cell">
                     <el-image
-                      :src="item.goods.coverImage || ''"
+                      :src="(item.images && item.images.length > 0) ? item.images[0].url : ''"
                       fit="cover"
                       class="review-thumb"
                     >
@@ -158,6 +158,7 @@
                   <td>{{ item.goods.categoryId || '-' }}</td>
                   <td>{{ formatTime(item.goods.createdAt) }}</td>
                   <td class="action-cell audit-actions">
+                    <button class="action-btn detail-btn" @click="showGoodsDetail(item)">详情</button>
                     <button class="action-btn approve-btn" @click="auditItem(item, 1)">通过</button>
                     <button class="action-btn reject-audit-btn" @click="showRejectDialog(item)">驳回</button>
                   </td>
@@ -294,6 +295,96 @@
         <button class="dialog-btn confirm-reject-btn" @click="confirmReject">确认驳回</button>
       </template>
     </el-dialog>
+
+    <!-- 商品审核详情弹窗 -->
+    <el-dialog v-model="goodsDetailVisible" title="商品审核详情" width="640px" class="goods-detail-dialog">
+      <div class="goods-detail-content" v-if="currentGoodsDetail">
+        <!-- 顶部图片区 -->
+        <div class="gd-images-section">
+          <div v-if="currentGoodsDetail.images && currentGoodsDetail.images.length > 0" class="gd-image-list">
+            <el-image
+              v-for="(img, idx) in currentGoodsDetail.images"
+              :key="idx"
+              :src="img.url"
+              fit="cover"
+              class="gd-image-item"
+              :preview-src-list="currentGoodsDetail.images.map(i => i.url)"
+              :initial-index="idx"
+            >
+              <template #error>
+                <div class="gd-img-placeholder"><img src="/placeholder.png" alt="图片加载失败" /></div>
+              </template>
+            </el-image>
+          </div>
+          <div v-else class="gd-no-images">暂无商品图片</div>
+        </div>
+
+        <!-- 信息区 -->
+        <div class="gd-info-grid">
+          <div class="gd-info-item gd-full-width">
+            <span class="gd-label">商品标题：</span>
+            <span class="gd-value gd-title">{{ currentGoodsDetail.goods.title }}</span>
+          </div>
+          <div class="gd-info-item">
+            <span class="gd-label">售价：</span>
+            <span class="gd-value gd-price">&yen;{{ currentGoodsDetail.goods.price }}</span>
+          </div>
+          <div class="gd-info-item">
+            <span class="gd-label">原价：</span>
+            <span class="gd-value">{{ currentGoodsDetail.goods.originalPrice ? '&yen;' + currentGoodsDetail.goods.originalPrice : '未设置' }}</span>
+          </div>
+          <div class="gd-info-item">
+            <span class="gd-label">成色等级：</span>
+            <span class="gd-value">
+              <span class="condition-bar">
+                <span class="condition-fill" :style="{ width: (currentGoodsDetail.goods.conditionLevel || 0) * 10 + '%' }"></span>
+              </span>
+              {{ currentGoodsDetail.goods.conditionLevel || 0 }} / 10
+            </span>
+          </div>
+          <div class="gd-info-item">
+            <span class="gd-label">交易方式：</span>
+            <span class="gd-value">{{ tradeMethodLabel(currentGoodsDetail.goods.tradeMethod) }}</span>
+          </div>
+          <div class="gd-info-item">
+            <span class="gd-label">接受议价：</span>
+            <span class="gd-value">
+              <span class="bargain-tag" :class="currentGoodsDetail.goods.isBargain ? 'yes' : 'no'">
+                {{ currentGoodsDetail.goods.isBargain ? '是' : '否' }}
+              </span>
+            </span>
+          </div>
+          <div class="gd-info-item">
+            <span class="gd-label">校区位置：</span>
+            <span class="gd-value">{{ currentGoodsDetail.goods.campusLocation || '未填写' }}</span>
+          </div>
+          <div class="gd-info-item">
+            <span class="gd-label">分类 ID：</span>
+            <span class="gd-value">{{ currentGoodsDetail.goods.categoryId || '-' }}</span>
+          </div>
+          <div class="gd-info-item">
+            <span class="gd-label">发布者：</span>
+            <span class="gd-value">{{ currentGoodsDetail.sellerName || ('用户 #' + currentGoodsDetail.sellerId) }} (ID: {{ currentGoodsDetail.sellerId }})</span>
+          </div>
+          <div class="gd-info-item">
+            <span class="gd-label">发布时间：</span>
+            <span class="gd-value">{{ formatTime(currentGoodsDetail.goods.createdAt) }}</span>
+          </div>
+        </div>
+
+        <!-- 描述区 -->
+        <div class="gd-desc-section" v-if="currentGoodsDetail.goods.description">
+          <div class="gd-desc-label">商品描述：</div>
+          <div class="gd-desc-text">{{ currentGoodsDetail.goods.description }}</div>
+        </div>
+
+        <!-- 底部操作 -->
+        <div class="gd-footer-actions">
+          <button class="action-btn approve-btn" @click="auditFromDetail(1)">通过审核</button>
+          <button class="action-btn reject-audit-btn" @click="rejectFromDetail()">驳回审核</button>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -321,6 +412,34 @@ const reviewGoods = ref([])
 const rejectVisible = ref(false)
 const currentReviewItem = ref(null)
 const rejectRemark = ref('')
+
+// 商品审核详情
+const goodsDetailVisible = ref(false)
+const currentGoodsDetail = ref(null)
+
+function tradeMethodLabel(method) {
+  const map = { FACE: '面交', LOCKER: '邮件柜', BOTH: '均可' }
+  return map[method] || method || '-'
+}
+
+function showGoodsDetail(item) {
+  currentGoodsDetail.value = item
+  goodsDetailVisible.value = true
+}
+
+async function auditFromDetail(status) {
+  if (!currentGoodsDetail.value) return
+  await adminApi.auditGoods(currentGoodsDetail.value.goods.uuid, status)
+  ElMessage.success('已通过审核，商品已上架')
+  goodsDetailVisible.value = false
+  load()
+}
+
+function rejectFromDetail() {
+  if (!currentGoodsDetail.value) return
+  goodsDetailVisible.value = false
+  showRejectDialog(currentGoodsDetail.value)
+}
 
 const filteredUsers = computed(() => {
   if (!userSearch.value.trim()) return users.value
@@ -1144,5 +1263,177 @@ onMounted(load)
 .confirm-reject-btn:hover {
   background: var(--sc-primary-light);
   transform: translateY(-1px);
+}
+
+/* ===== 商品审核详情弹窗 ===== */
+.goods-detail-content {
+  padding: 4px 0;
+}
+
+.gd-images-section {
+  margin-bottom: 20px;
+  border-radius: var(--sc-radius-md);
+  overflow: hidden;
+  background: var(--sc-bg);
+  padding: 12px;
+}
+
+.gd-image-list {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gd-image-item {
+  width: 120px;
+  height: 120px;
+  border-radius: var(--sc-radius-sm);
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.gd-image-item:hover {
+  transform: scale(1.05);
+}
+
+.gd-img-placeholder {
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  border-radius: var(--sc-radius-sm);
+}
+
+.gd-img-placeholder img {
+  width: 40px;
+  height: 40px;
+  opacity: 0.3;
+}
+
+.gd-no-images {
+  text-align: center;
+  color: var(--sc-text-muted);
+  font-size: 14px;
+  padding: 24px;
+}
+
+.gd-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 20px;
+  margin-bottom: 16px;
+}
+
+.gd-info-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgba(0,0,0,0.05);
+}
+
+.gd-info-item.gd-full-width {
+  grid-column: 1 / -1;
+  border-bottom: none;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+}
+
+.gd-label {
+  font-size: 13px;
+  color: var(--sc-text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.gd-value {
+  font-size: 14px;
+  color: var(--sc-text);
+}
+
+.gd-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--sc-text);
+}
+
+.gd-price {
+  color: var(--sc-primary);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+/* 成色进度条 */
+.condition-bar {
+  display: inline-block;
+  width: 80px;
+  height: 8px;
+  background: var(--sc-bg);
+  border-radius: 4px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.condition-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #67c23a, #85ce61);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+/* 议价标签 */
+.bargain-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--sc-radius-full);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bargain-tag.yes {
+  background: #f0f9eb;
+  color: #67c23a;
+}
+
+.bargain-tag.no {
+  background: #f4f4f5;
+  color: #909399;
+}
+
+/* 描述区 */
+.gd-desc-section {
+  background: var(--sc-bg-warm);
+  border-radius: var(--sc-radius-md);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+}
+
+.gd-desc-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sc-text-secondary);
+  margin-bottom: 8px;
+}
+
+.gd-desc-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--sc-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 底部操作按钮 */
+.gd-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sc-border);
 }
 </style>
