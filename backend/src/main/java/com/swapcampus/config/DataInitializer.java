@@ -1,5 +1,6 @@
 package com.swapcampus.config;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.swapcampus.entity.Category;
 import com.swapcampus.entity.User;
 import com.swapcampus.entity.Wallet;
@@ -13,9 +14,23 @@ import com.swapcampus.repository.GoodsImageMapper;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import javax.imageio.ImageIO;
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -31,8 +46,23 @@ public class DataInitializer {
                                       WalletMapper walletMapper,
                                       GoodsMapper goodsMapper,
                                       GoodsImageMapper goodsImageMapper,
+                                      JdbcTemplate jdbcTemplate,
                                       PasswordEncoder passwordEncoder) {
         return args -> {
+
+            // 补全数据库表结构（文件模式下旧数据可能缺少列）
+            try {
+                jdbcTemplate.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS seller_rating INT");
+                jdbcTemplate.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS seller_review TEXT");
+                System.out.println("[初始化] 数据库结构校验完成");
+            } catch (Exception e) {
+                System.err.println("[初始化] 数据库结构校验跳过: " + e.getMessage());
+            }
+
+            // 确保商品图片目录存在（不删除已有数据，支持重启复用）
+            Path uploadsDir = Paths.get("uploads", "goods");
+            Files.createDirectories(uploadsDir);
+
             // 初始化商品分类
             if (categoryMapper.selectCount(null) == 0) {
                 Category[] categories = {
@@ -330,15 +360,31 @@ public class DataInitializer {
                 );
 
                 Random random = new Random();
+
+                // 分类对应的英文提示词前缀（用于AI图片生成）
+                String[] categoryPrompts = {
+                    "",                                              // 0-占位
+                    "textbook book university study education",     // 1-教材教辅
+                    "electronics gadget tech device computer",      // 2-电子数码
+                    "home appliance daily item household living",   // 3-生活用品
+                    "sports equipment outdoor fitness athletic",    // 4-运动户外
+                    "fashion clothing apparel beauty cosmetic",     // 5-服饰美妆
+                    "book music media audio reading",               // 6-图书音像
+                    "accessory item personal belongings misc"       // 7-其他闲置
+                };
+
                 for (Object[] data : goodsData) {
                     String uuid = (String) data[0];
                     Long sellerId = (Long) data[1];
                     Long categoryId = (Long) data[2];
+                    String title = (String) data[3];
+                    int catId = categoryId.intValue();
+
                     Goods goods = Goods.builder()
                             .uuid(uuid)
                             .sellerId(sellerId)
                             .categoryId(categoryId)
-                            .title((String) data[3])
+                            .title(title)
                             .description((String) data[4])
                             .price((BigDecimal) data[5])
                             .originalPrice((BigDecimal) data[6])
@@ -354,10 +400,13 @@ public class DataInitializer {
                             .build();
                     goodsMapper.insert(goods);
 
-                    // 添加商品图片
+                    // 用商品标题+分类关键词构建AI绘图提示，生成语义匹配的图片
+                    String prompt = categoryPrompts[catId] + " " + title;
+                    String localUrl = downloadAndSaveImage(uuid, prompt);
+
                     GoodsImage image = new GoodsImage();
                     image.setGoodsUuid(uuid);
-                    image.setUrl("/uploads/goods/" + uuid + "/image.jpg");
+                    image.setUrl(localUrl);
                     image.setSortOrder(0);
                     goodsImageMapper.insert(image);
                 }
@@ -371,6 +420,165 @@ public class DataInitializer {
                     goodsMapper.updateById(goods);
                 }
             });
+
+            // 补全已有商品但缺少图片的数据（重启后图片目录保留，无需重新下载）
+            long goodsCount = goodsMapper.selectCount(null);
+            long imageCount = goodsImageMapper.selectCount(null);
+            if (goodsCount > 0 && imageCount < goodsCount) {
+                System.out.println("[初始化] 检测到 " + (goodsCount - imageCount) + " 个商品缺少图片，开始补全...");
+                String[] categoryPrompts = {
+                    "",                                              // 0-占位
+                    "textbook book university study education",     // 1-教材教辅
+                    "electronics gadget tech device computer",      // 2-电子数码
+                    "home appliance daily item household living",   // 3-生活用品
+                    "sports equipment outdoor fitness athletic",    // 4-运动户外
+                    "fashion clothing apparel beauty cosmetic",     // 5-服饰美妆
+                    "book music media audio reading",               // 6-图书音像
+                    "accessory item personal belongings misc"       // 7-其他闲置
+                };
+                List<Goods> allGoods = goodsMapper.selectList(null);
+                for (Goods g : allGoods) {
+                    long imgCount = goodsImageMapper.selectCount(
+                        new LambdaQueryWrapper<GoodsImage>()
+                            .eq(GoodsImage::getGoodsUuid, g.getUuid())
+                    );
+                    if (imgCount == 0) {
+                        int catId = g.getCategoryId() != null ? g.getCategoryId().intValue() : 0;
+                        String prompt = categoryPrompts[catId] + " " + g.getTitle();
+                        String localUrl = downloadAndSaveImage(g.getUuid(), prompt);
+                        GoodsImage image = new GoodsImage();
+                        image.setGoodsUuid(g.getUuid());
+                        image.setUrl(localUrl);
+                        image.setSortOrder(0);
+                        goodsImageMapper.insert(image);
+                    }
+                }
+                System.out.println("[初始化] 图片补全完成");
+            } else if (goodsCount > 0) {
+                System.out.println("[初始化] 数据已存在（" + goodsCount + " 个商品），跳过初始化");
+            }
         };
+    }
+
+    /**
+     * 根据商品标题和分类，从Picsum下载真实照片并保存到本地
+     * 使用seed模式保证：任意商品都能成功下载、同商品图片稳定一致、按分类有视觉区分
+     */
+    private String downloadAndSaveImage(String uuid, String prompt) {
+        try {
+            // 创建商品图片目录
+            Path dir = Paths.get("uploads", "goods", uuid);
+            Files.createDirectories(dir);
+
+            Path localPath = dir.resolve("image.jpg");
+
+            // 用分类关键词+uuid前缀作为seed，确保同类视觉风格一致且每商品唯一
+            int catId = extractCategoryIdFromPrompt(prompt);
+            String categorySeed = getCategorySeed(catId);
+            String seed = categorySeed + "-" + uuid.substring(0, 8);
+            String encodedSeed = URLEncoder.encode(seed, StandardCharsets.UTF_8).replace("+", "%20");
+            String picsumUrl = "https://picsum.photos/seed/" + encodedSeed + "/600/450";
+
+            boolean downloaded = false;
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    URL url = new URL(picsumUrl);
+                    byte[] imageBytes = url.openStream().readAllBytes();
+                    if (imageBytes != null && imageBytes.length > 1000) {
+                        Files.write(localPath, imageBytes);
+                        System.out.println("  [图片已下载] " + uuid + " -> seed:" + seed);
+                        downloaded = true;
+                        break;
+                    }
+                } catch (Exception e) {
+                    System.err.println("  [第" + attempt + "次下载失败] " + uuid + ": " + e.getMessage());
+                    Thread.sleep(1000 * attempt);
+                }
+            }
+
+            if (!downloaded) {
+                System.err.println("  [下载失败，使用占位图] " + uuid);
+                generatePlaceholderImage(localPath, uuid, prompt);
+                System.out.println("  [占位图已保存] " + uuid);
+            }
+
+            return "/uploads/goods/" + uuid + "/image.jpg";
+        } catch (Exception e) {
+            System.err.println("  [图片处理异常] " + uuid + ": " + e.getMessage());
+            return "/uploads/goods/" + uuid + "/image.jpg";
+        }
+    }
+
+    /** 获取各分类的英文seed关键词（影响Picsum返回的图片风格） */
+    private String getCategorySeed(int catId) {
+        switch (catId) {
+            case 1: return "book";           // 教材教辅 - 书本风格
+            case 2: return "technology";      // 电子数码 - 科技产品
+            case 3: return "home";           // 生活用品 - 居家物品
+            case 4: return "sport";          // 运动户外 - 运动装备
+            case 5: return "fashion";        // 服饰美妆 - 时尚服装
+            case 6: return "music";          // 图书音像 - 书籍音乐
+            case 7: return "misc";           // 其他闲置 - 日常杂物
+            default: return "item";
+        }
+    }
+
+    /** 从提示词中提取分类ID（提示词格式："分类关键词 商品标题"） */
+    private int extractCategoryIdFromPrompt(String prompt) {
+        if (prompt.startsWith("textbook")) return 1;
+        if (prompt.startsWith("electronics")) return 2;
+        if (prompt.startsWith("home appliance")) return 3;
+        if (prompt.startsWith("sports equipment")) return 4;
+        if (prompt.startsWith("fashion clothing")) return 5;
+        if (prompt.startsWith("book music media")) return 6;
+        if (prompt.startsWith("accessory item")) return 7;
+        return 0;
+    }
+
+    /**
+     * 生成带商品标题的占位图片（仅在下载彻底失败时使用）
+     */
+    private void generatePlaceholderImage(Path localPath, String uuid, String prompt) {
+        try {
+            // 根据uuid哈希生成稳定的柔和色调
+            int hash = uuid.hashCode();
+            int r = Math.abs(hash % 60) + 140;
+            int g = Math.abs((hash >> 8) % 60) + 150;
+            int b = Math.abs((hash >> 16) % 60) + 160;
+
+            BufferedImage img = new BufferedImage(600, 450, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g2d = (Graphics2D) img.getGraphics();
+            g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+
+            // 填充背景色
+            g2d.setColor(new Color(r, g, b));
+            g2d.fillRect(0, 0, 600, 450);
+
+            // 提取商品标题（去掉分类关键词前缀）
+            String title = prompt.replaceFirst("^\\S+\\s+", "");
+            if (title.length() > 16) title = title.substring(0, 16) + "...";
+
+            // 绘制标题文字
+            g2d.setColor(new Color(255, 255, 255));
+            g2d.setFont(new Font("Microsoft YaHei", Font.BOLD, 28));
+            FontMetrics fm = g2d.getFontMetrics();
+            int tw = fm.stringWidth(title);
+            g2d.drawString(title, (600 - tw) / 2, 210);
+
+            // 绘制品牌
+            g2d.setFont(new Font("Microsoft YaHei", Font.PLAIN, 18));
+            g2d.setColor(new Color(255, 255, 255, 220));
+            String brand = "SwapCampus";
+            int bw = g2d.getFontMetrics().stringWidth(brand);
+            g2d.drawString(brand, (600 - bw) / 2, 260);
+
+            g2d.dispose();
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(img, "jpg", baos);
+            Files.write(localPath, baos.toByteArray());
+        } catch (Exception e) {
+            System.err.println("  [占位图生成失败] " + uuid + ": " + e.getMessage());
+        }
     }
 }

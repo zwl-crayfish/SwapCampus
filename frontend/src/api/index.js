@@ -1,14 +1,16 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import router from '@/router'
+import { getToken, clearAllSessions } from '@/composables/useMultiAuth'
 
 const http = axios.create({
   baseURL: '/api',
   timeout: 15000,
 })
 
-// 请求拦截器
+// 请求拦截器 — 从多账号模块读取当前活跃 token
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -27,8 +29,7 @@ http.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
+      clearAllSessions()
       window.location.href = '/login'
     }
     ElMessage.error(error.response?.data?.message || '网络错误')
@@ -62,6 +63,9 @@ export const goodsApi = {
   changeStatus: (uuid, status) => http.put(`/goods/${uuid}/status`, null, { params: { status } }),
   toggleFavorite: (uuid) => http.post(`/goods/${uuid}/favorite`),
   myPublished: (params) => http.get('/goods/my-published', { params }),
+  myFavorites: (params) => http.get('/goods/my-favorites', { params }),
+  report: (uuid, data) => http.post(`/goods/${uuid}/report`, null, { params: data }),
+  getRecommendations: () => http.get('/goods/recommendations'),
 }
 
 // Order API
@@ -72,6 +76,7 @@ export const orderApi = {
   sellerConfirm: (uuid) => http.put(`/orders/${uuid}/seller-confirm`),
   cancel: (uuid) => http.put(`/orders/${uuid}/cancel`),
   review: (uuid, rating, review) => http.put(`/orders/${uuid}/review`, null, { params: { rating, review } }),
+  sellerReview: (uuid, rating, review) => http.put(`/orders/${uuid}/seller-review`, null, { params: { rating, review } }),
   buyerOrders: (params) => http.get('/orders/buyer', { params }),
   sellerOrders: (params) => http.get('/orders/seller', { params }),
 }
@@ -92,7 +97,8 @@ export const adminApi = {
   dashboard: () => http.get('/admin/dashboard'),
   getUsers: (params) => http.get('/admin/users', { params }),
   toggleUserStatus: (id, status) => http.put(`/admin/users/${id}/status`, null, { params: { status } }),
-  auditGoods: (uuid, status) => http.put(`/admin/goods/${uuid}/audit`, null, { params: { status } }),
+  getReviewGoods: (params) => http.get('/admin/goods/review', { params }),
+  auditGoods: (uuid, status, remark) => http.put(`/admin/goods/${uuid}/audit`, null, { params: { status, remark } }),
   getReports: (params) => http.get('/admin/reports', { params }),
   handleReport: (id, status, remark) => http.put(`/admin/reports/${id}/handle`, null, { params: { status, remark } }),
 }

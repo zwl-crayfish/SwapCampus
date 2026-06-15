@@ -36,9 +36,31 @@
               </el-button>
             </el-badge>
             <el-dropdown trigger="click">
-              <el-avatar :size="36" :src="userStore.user?.avatarUrl" class="avatar" />
+              <div class="avatar-wrapper">
+                <el-avatar :size="36" :src="userStore.user?.avatarUrl" class="avatar" />
+                <span
+                  v-if="userStore.getSessionCount() > 1"
+                  class="session-badge"
+                >{{ userStore.getSessionCount() }}</span>
+              </div>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <!-- 多账号切换区 -->
+                  <template v-if="userStore.getSessionCount() > 1">
+                    <div class="switch-section-title">切换账号</div>
+                    <el-dropdown-item
+                      v-for="s in allSessions"
+                      :key="s.id"
+                      :class="{ 'is-active-session': s.id === userStore.user?.id }"
+                      @click="handleSwitch(s.id)"
+                    >
+                      <el-avatar :size="24" :src="s.avatarUrl" style="margin-right:8px;flex-shrink:0" />
+                      <span class="session-name">{{ s.realName || s.username }}</span>
+                      <el-icon v-if="s.id === userStore.user?.id" color="#3b82f6"><Select /></el-icon>
+                    </el-dropdown-item>
+                    <el-dropdown-item divided />
+                  </template>
+                  <!-- 常规菜单 -->
                   <el-dropdown-item @click="$router.push('/profile')">
                     <el-icon><User /></el-icon>个人中心
                   </el-dropdown-item>
@@ -52,7 +74,7 @@
                     <el-icon><Setting /></el-icon>后台管理
                   </el-dropdown-item>
                   <el-dropdown-item divided @click="handleLogout">
-                    <el-icon><SwitchButton /></el-icon>退出登录
+                    <el-icon><SwitchButton /></el-icon>{{ userStore.getSessionCount() > 1 ? '退出当前账号' : '退出登录' }}
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -74,7 +96,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
@@ -83,15 +105,32 @@ const router = useRouter()
 const userStore = useUserStore()
 const keyword = ref('')
 
+// 所有已登录会话（响应式）
+const allSessions = computed(() => userStore.getAllSessions())
+
 function handleSearch() {
   if (keyword.value.trim()) {
     router.push({ path: '/', query: { keyword: keyword.value.trim() } })
   }
 }
 
+/** 切换到指定账号 */
+function handleSwitch(sessionId) {
+  if (sessionId === userStore.user?.id) return
+  userStore.switchAccount(sessionId)
+  ElMessage.success(`已切换为 ${allSessions.value.find(s => s.id === sessionId)?.username || ''}`)
+}
+
 function handleLogout() {
-  userStore.logout()
-  ElMessage.success('已退出登录')
+  const count = userStore.getSessionCount()
+  if (count > 1) {
+    // 多账号时只退出当前
+    userStore.logout()
+    ElMessage.success('已退出当前账号')
+  } else {
+    userStore.logout()
+    ElMessage.success('已退出登录')
+  }
   router.push('/')
 }
 </script>
@@ -213,8 +252,13 @@ function handleLogout() {
 }
 
 /* ========== Avatar Dropdown ========== */
-.avatar {
+.avatar-wrapper {
+  position: relative;
+  display: inline-flex;
   cursor: pointer;
+}
+
+.avatar {
   border: 2px solid var(--sc-border-light);
   transition: var(--sc-transition);
 }
@@ -222,6 +266,42 @@ function handleLogout() {
 .avatar:hover {
   border-color: var(--sc-primary);
   box-shadow: 0 0 0 4px var(--sc-primary-bg);
+}
+
+.session-badge {
+  position: absolute;
+  top: -4px; right: -6px;
+  min-width: 18px; height: 18px;
+  line-height: 18px;
+  text-align: center;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-radius: 9px;
+  border: 2px solid #fff;
+  pointer-events: none;
+}
+
+.switch-section-title {
+  padding: 8px 16px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sc-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.is-active-session {
+  background-color: rgba(59, 130, 246, 0.06) !important;
+}
+
+.session-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ========== 未登录状态：登录/注册 ========== */
