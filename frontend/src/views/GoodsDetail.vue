@@ -254,6 +254,7 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
 
 function saveBrowsingHistory() {
   const g = goods.value
