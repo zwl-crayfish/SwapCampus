@@ -41,3 +41,9 @@ _fix_status.js
 # Temp
 /tmp/
 *.tmp
+
+# K8s secrets (use secret.yaml.example as template)
+infra/k8s/secret.yaml
+
+# User uploads (runtime data)
+backend/uploads/
